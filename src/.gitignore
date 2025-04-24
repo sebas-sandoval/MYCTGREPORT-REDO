@@ -1,0 +1,34 @@
+# Entornos virtuales
+venv/
+env/
+*.pyc
+__pycache__/
+
+# Configuración de entorno
+*.env
+
+# Archivos de base de datos
+*.sqlite3
+
+# Archivos de VSCode
+.vscode/
+
+# Archivos de sistema
+.DS_Store
+Thumbs.db
+
+# Archivos de logs
+*.log
+
+# Archivos compilados
+*.so
+
+# Carpeta de dependencias (si usás pipenv o poetry)
+.pipenv/
+.poetry/
+
+# HTML/CSS compilado automáticamente (si aplica)
+staticfiles/
+
+# Archivos creados por Flask
+instance/
