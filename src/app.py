@@ -1,13 +1,27 @@
-from flask import Flask, render_template, request, redirect, url_for
+from flask import Flask, render_template, request, redirect, url_for, session, flash
 import os
 from database import create_connection, close_connection
-from flask import flash
 import re
+from werkzeug.utils import secure_filename
+import uuid
 
+# Ruta base del proyecto
+base_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Configuración de Flask y rutas de plantillas
-template_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
+template_dir = os.path.join(base_dir, 'templates')
 app = Flask(__name__, template_folder=template_dir)
+
+# Configuración de la carpeta de subida de imágenes
+UPLOAD_FOLDER = os.path.join(base_dir, 'static', 'imgs')
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # Crea la carpeta si no existe
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
+def allowed_file(filename):
+    return '.' in filename and \
+        filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 app.secret_key = 'panaderia' # Clave secreta para sesiones y mensajes flash
 
@@ -28,12 +42,14 @@ def login():
         close_connection(conn)
 
         if user:
+            session["user"] = user  # Guardar la sesión del usuario
             return redirect(url_for("dashboard"))  # Redirige a la página de dashboard
         else:
-            flash("Correo o contraseña incorrectos", "error")  # Mensaje de error con flash
+            flash("Correo o contraseña incorrectos", "error") 
             return render_template("login.html")
     return render_template("login.html")
 
+# Ruta para registrar un nuevo usuario
 @app.route("/register", methods=["GET", "POST"])
 def register():
     if request.method == "POST":
@@ -92,13 +108,73 @@ def register():
             return redirect(url_for("register"))
     return render_template("register.html")
 
+#Ruta para recuperar contraseña
 @app.route("/forgot_password", methods=["GET", "POST"])
 def forgot_password():
     return render_template("forgot_password.html")
 
+# Ruta de ventana principal
 @app.route("/dashboard", methods=["GET", "POST"])
 def dashboard():
-    return render_template("dashboard.html")
+    if "user" not in session:
+        return redirect(url_for("login"))
+    
+    user = session["user"]
+    
+    conn = create_connection()
+    cursor = conn.cursor(dictionary=True)  
+
+    # Obtener los datos del usuario
+    cursor.execute("SELECT * FROM usuarios WHERE id_usuario = %s", (user["id_usuario"],))
+    user = cursor.fetchone()
+    session["user"] = user
+
+    # Obtener los reportes de la base de datos
+    cursor.execute("SELECT * FROM publicaciones")
+    reportes = cursor.fetchall()
+
+    close_connection(conn)
+
+    return render_template("dashboard.html", user=user, reportes=reportes)
+
+
+
+@app.route("/reportes", methods=["GET", "POST"])
+def reportes():
+    if "user" not in session:
+        return redirect(url_for("login"))
+
+    if request.method == "POST":
+        text = request.form.get("texto")
+        file = request.files.get("imagen")
+        ubication = request.form.get("ubicacion")
+        id_usuario = session["user"]["id_usuario"]
+
+        if not text or not ubication or not file:
+            flash("Faltan datos.")
+            return redirect(url_for("dashboard"))
+
+        if file and allowed_file(file.filename):
+            # Nombre seguro y único para el archivo
+            original_filename = secure_filename(file.filename)
+            unique_filename = f"{uuid.uuid4().hex}_{original_filename}"
+            save_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+            file.save(save_path)
+
+            # Guardar en base de datos
+            conn = create_connection()
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO publicaciones (id_usuario, descripcion, imagen, ubicacion)
+                VALUES (%s, %s, %s, %s)
+            """, (id_usuario, text, unique_filename, ubication))
+            conn.commit()
+            close_connection(conn)
+            flash("Reporte guardado con éxito")
+        else:
+            flash("Tipo de archivo no permitido. Solo se permiten imágenes.")
+    return redirect(url_for("dashboard"))
+
 
 
 
