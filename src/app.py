@@ -33,7 +33,7 @@ def login():
         password = request.form["password"]
 
         conn = create_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)
 
         # Comprobar si correo y contraseña son correctos
         cursor.execute("SELECT * FROM usuarios WHERE correo = %s AND contrasena = %s", (email, password))
@@ -42,12 +42,17 @@ def login():
         close_connection(conn)
 
         if user:
-            session["user"] = user  # Guardar la sesión del usuario
+            session["user"] = user["id_usuario"] 
             return redirect(url_for("dashboard"))  # Redirige a la página de dashboard
         else:
             flash("Correo o contraseña incorrectos", "error") 
             return render_template("login.html")
     return render_template("login.html")
+
+@app.route("/logout")
+def logout():
+    session.pop("user", None)
+    return redirect(url_for("login"))
 
 # Ruta para registrar un nuevo usuario
 @app.route("/register", methods=["GET", "POST"])
@@ -90,7 +95,7 @@ def register():
                 flash("el correo electrouco ya existe")
                 return redirect(url_for("register"))
             else:
-                # comprobar nickname ya
+                # comprobar nickname ya existe
                 cursor.execute("SELECT * FROM usuarios WHERE nickname = %s", (nickname,))
                 user_by_nickname = cursor.fetchone()
 
@@ -116,18 +121,17 @@ def forgot_password():
 # Ruta de ventana principal
 @app.route("/dashboard", methods=["GET", "POST"])
 def dashboard():
-    if "user" not in session:
+    user_id = session.get("user")
+    if not user_id:
         return redirect(url_for("login"))
-    
-    user = session["user"]
-    
+
     conn = create_connection()
-    cursor = conn.cursor(dictionary=True)  
+    cursor = conn.cursor(dictionary=True)
 
     # Obtener los datos del usuario
-    cursor.execute("SELECT * FROM usuarios WHERE id_usuario = %s", (user["id_usuario"],))
+    cursor.execute("SELECT * FROM usuarios WHERE id_usuario = %s", (user_id,))
     user = cursor.fetchone()
-    session["user"] = user
+    session["user"] = user["id_usuario"] 
 
     # Obtener los reportes de la base de datos
     cursor.execute("SELECT * FROM publicaciones")
@@ -136,7 +140,6 @@ def dashboard():
     close_connection(conn)
 
     return render_template("dashboard.html", user=user, reportes=reportes)
-
 
 
 @app.route("/reportes", methods=["GET", "POST"])
@@ -148,7 +151,7 @@ def reportes():
         text = request.form.get("texto")
         file = request.files.get("imagen")
         ubication = request.form.get("ubicacion")
-        id_usuario = session["user"]["id_usuario"]
+        id_usuario = session["user"]
 
         if not text or not ubication or not file:
             flash("Faltan datos.")
@@ -163,14 +166,14 @@ def reportes():
 
             # Guardar en base de datos
             conn = create_connection()
-            cursor = conn.cursor()
+            cursor = conn.cursor(dictionary=True)
             cursor.execute("""
                 INSERT INTO publicaciones (id_usuario, descripcion, imagen, ubicacion)
                 VALUES (%s, %s, %s, %s)
             """, (id_usuario, text, unique_filename, ubication))
             conn.commit()
             close_connection(conn)
-            flash("Reporte guardado con éxito")
+            flash("Reporte publicado con éxito")
         else:
             flash("Tipo de archivo no permitido. Solo se permiten imágenes.")
     return redirect(url_for("dashboard"))
