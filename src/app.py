@@ -118,7 +118,6 @@ def register():
 def forgot_password():
     return render_template("forgot_password.html")
 
-# Ruta de ventana principal
 @app.route("/dashboard", methods=["GET", "POST"])
 def dashboard():
     user_id = session.get("user")
@@ -128,18 +127,39 @@ def dashboard():
     conn = create_connection()
     cursor = conn.cursor(dictionary=True)
 
-    # Obtener los datos del usuario
+    # Obtener datos del usuario
     cursor.execute("SELECT * FROM usuarios WHERE id_usuario = %s", (user_id,))
     user = cursor.fetchone()
-    session["user"] = user["id_usuario"] 
 
-    # Obtener los reportes de la base de datos
-    cursor.execute("SELECT * FROM publicaciones")
-    reportes = cursor.fetchall()
+    # Obtener el filtro desde la URL
+    filtro = request.args.get("filtro")
+
+    orden = "p.fecha_publicacion DESC" 
+    if filtro == "populares":
+        orden = "total_likes DESC"
+    elif filtro == "comentados":
+        orden = "total_comentarios DESC"
+
+    # Obtener publicaciones
+    query = f"""
+        SELECT p.*, u.nickname, u.foto_perfil,
+            (SELECT COUNT(*) FROM MeGusta WHERE id_publicacion = p.id_publicacion) AS total_likes,
+            (SELECT COUNT(*) FROM Comentarios WHERE id_publicacion = p.id_publicacion) AS total_comentarios,
+            EXISTS(
+                SELECT 1 FROM MeGusta 
+                WHERE id_usuario = %s AND id_publicacion = p.id_publicacion
+            ) AS dio_like
+        FROM Publicaciones p
+        JOIN Usuarios u ON p.id_usuario = u.id_usuario
+        ORDER BY {orden}
+    """
+    cursor.execute(query, (user_id,))
+    publicaciones = cursor.fetchall()
 
     close_connection(conn)
 
-    return render_template("dashboard.html", user=user, reportes=reportes)
+    return render_template("dashboard.html", user=user, publicaciones=publicaciones)
+
 
 
 @app.route("/reportes", methods=["GET", "POST"])
@@ -177,6 +197,131 @@ def reportes():
         else:
             flash("Tipo de archivo no permitido. Solo se permiten imágenes.")
     return redirect(url_for("dashboard"))
+
+@app.route('/editar/<int:post_id>', methods=['POST'])
+def editar_publicacion(post_id):
+    user_id = session.get("user")
+    if not user_id:
+        return redirect(url_for("login"))
+
+    descripcion = request.form['descripcion']
+    ubicacion = request.form['ubicacion']
+
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id_usuario FROM Publicaciones WHERE id_publicacion = %s", (post_id,))
+    resultado = cursor.fetchone()
+
+    if not resultado or resultado[0] != user_id:
+        flash("No tienes permiso para editar esta publicación.", "danger")
+        return redirect(url_for("dashboard"))
+
+    cursor.execute("""
+        UPDATE Publicaciones 
+        SET descripcion = %s, ubicacion = %s 
+        WHERE id_publicacion = %s
+    """, (descripcion, ubicacion, post_id))
+    conn.commit()
+    close_connection(conn)
+
+    flash("Publicación actualizada correctamente.", "success")
+    return redirect(url_for("dashboard"))
+
+@app.route('/eliminar/<int:post_id>', methods=['POST'])
+def eliminar_publicacion(post_id):
+    user_id = session.get("user")
+    if not user_id:
+        return redirect(url_for("login"))
+
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT id_usuario FROM Publicaciones WHERE id_publicacion = %s", (post_id,))
+    resultado = cursor.fetchone()
+
+    if not resultado or resultado[0] != user_id:
+        flash("No tienes permiso para eliminar esta publicación.", "danger")
+        return redirect(url_for("dashboard"))
+
+    cursor.execute("DELETE FROM Publicaciones WHERE id_publicacion = %s", (post_id,))
+    conn.commit()
+    close_connection(conn)
+
+    flash("Publicación eliminada correctamente.", "success")
+    return redirect(url_for("dashboard"))
+
+
+@app.route('/like/<int:post_id>', methods=['POST'])
+def like_post(post_id):
+    user_id = session.get("user")
+    if not user_id:
+        return redirect(url_for("login"))
+
+    conn = create_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    # Verificar si ya le dio like
+    cursor.execute("""
+        SELECT * FROM MeGusta WHERE id_usuario = %s AND id_publicacion = %s
+    """, (user_id, post_id))
+    existing_like = cursor.fetchone()
+
+    if existing_like:
+        # Si ya le dio like, eliminarlo (dislike)
+        cursor.execute("""
+            DELETE FROM MeGusta WHERE id_megusta = %s
+        """, (existing_like["id_megusta"],))
+    else:
+        # Si no le ha dado like, insertarlo
+        cursor.execute("""
+            INSERT INTO MeGusta (id_usuario, id_publicacion) VALUES (%s, %s)
+        """, (user_id, post_id))
+
+    conn.commit()
+    close_connection(conn)
+    return redirect(url_for('dashboard'))
+
+@app.route('/publicacion/<int:post_id>', methods=['GET', 'POST'])
+def ver_post(post_id):
+    user_id = session.get("user")
+    if not user_id:
+        return redirect(url_for("login"))
+
+    conn = create_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    # Procesar comentario
+    if request.method == "POST":
+        comentario = request.form.get("comentario")
+        if comentario:
+            cursor.execute("""
+                INSERT INTO Comentarios (id_usuario, id_publicacion, contenido)
+                VALUES (%s, %s, %s)
+            """, (user_id, post_id, comentario))
+            conn.commit()
+
+    # Obtener datos del post
+    cursor.execute("""
+        SELECT p.*, u.nickname, u.foto_perfil 
+        FROM Publicaciones p
+        JOIN Usuarios u ON p.id_usuario = u.id_usuario
+        WHERE p.id_publicacion = %s
+    """, (post_id,))
+    post = cursor.fetchone()
+
+    # Obtener comentarios
+    cursor.execute("""
+        SELECT c.*, u.nickname, u.foto_perfil
+        FROM Comentarios c
+        JOIN Usuarios u ON c.id_usuario = u.id_usuario
+        WHERE c.id_publicacion = %s
+        ORDER BY c.fecha_comentario DESC
+    """, (post_id,))
+    comentarios = cursor.fetchall()
+
+    close_connection(conn)
+    return render_template("ver_post.html", post=post, comentarios=comentarios)
+
+
 
 
 
