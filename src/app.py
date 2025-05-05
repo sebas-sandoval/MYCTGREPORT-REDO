@@ -55,24 +55,24 @@ def logout():
     return redirect(url_for("login"))
 
 # Ruta para registrar un nuevo usuario
-@app.route("/register", methods=["GET", "POST"])
-def register():
+@app.route("/registro", methods=["GET", "POST"])
+def registro():
     if request.method == "POST":
-        name = request.form["nombre"]
-        lastname = request.form["apellido"]
+        nombre = request.form["nombre"]
+        apellido = request.form["apellido"]
         nickname = request.form["nickname"]
-        email = request.form["correo"]
-        password = request.form["contraseña"]
-        phone = request.form["telefono"]
-        adress = request.form["residencia"]
+        correo = request.form["correo"]
+        contraseña = request.form["contraseña"]
+        telefono = request.form["telefono"]
+        residencia = request.form["residencia"]
 
         #validar datos
-        if name and lastname and nickname and email and password and phone and adress:
+        if nombre and apellido and nickname and correo and contraseña and telefono and residencia:
             fields = {
-                "nombre": (name, 3, "El nombre debe tener al menos 3 caracteres."),
-                "apellido": (lastname, 3, "El apellido debe tener al menos 3 caracteres."),
+                "nombre": (nombre, 3, "El nombre debe tener al menos 3 caracteres."),
+                "apellido": (apellido, 3, "El apellido debe tener al menos 3 caracteres."),
                 "nickname": (nickname, 3, "El nickname debe tener al menos 3 caracteres."),
-                "contraseña": (password, 8, "La contraseña debe tener al menos 8 caracteres.")
+                "contraseña": (contraseña, 8, "La contraseña debe tener al menos 8 caracteres.")
             }
 
             for fields, (value, min_length, error_message) in fields.items():
@@ -80,7 +80,7 @@ def register():
                     flash(error_message)
                     return redirect(url_for("register"))
                 
-            if not re.match(r'^[0-9]{10}$', phone):
+            if not re.match(r'^[0-9]{10}$', telefono):
                 flash("El número de celular debe tener solo 10 dígitos.")
                 return redirect(url_for("register"))
             
@@ -88,7 +88,7 @@ def register():
             cursor = conn.cursor()
 
             # Comprobar si el correo ya existe
-            cursor.execute("SELECT * FROM usuarios WHERE correo= %s" , (email,))
+            cursor.execute("SELECT * FROM usuarios WHERE correo= %s" , (correo,))
             user_by_email = cursor.fetchone()
 
             if user_by_email:
@@ -104,7 +104,7 @@ def register():
                 return redirect(url_for("register"))
             
             #guardar usuario en la base de datos
-            cursor.execute("INSERT INTO usuarios (nombre, apellido, nickname, correo, contrasena, telefono, residencia) VALUES (%s, %s, %s, %s, %s, %s, %s)", (name, lastname, nickname, email, password, phone, adress))
+            cursor.execute("INSERT INTO usuarios (nombre, apellido, nickname, correo, contrasena, telefono, residencia) VALUES (%s, %s, %s, %s, %s, %s, %s)", (nombre, apellido, nickname, correo, contraseña, telefono, residencia))
             conn.commit()
             flash("Usuario registrado con éxito")
             return redirect(url_for("login"))
@@ -114,8 +114,8 @@ def register():
     return render_template("register.html")
 
 #Ruta para recuperar contraseña
-@app.route("/forgot_password", methods=["GET", "POST"])
-def forgot_password():
+@app.route("/olvido_contraseña", methods=["GET", "POST"])
+def olvido():
     return render_template("forgot_password.html")
 
 @app.route("/dashboard", methods=["GET", "POST"])
@@ -156,33 +156,45 @@ def dashboard():
     cursor.execute(query, (user_id,))
     publicaciones = cursor.fetchall()
 
+    #Agregar comentarios a cada publicación
+    for pub in publicaciones:
+        cursor.execute("""
+            SELECT c.*, u.nickname 
+            FROM Comentarios c 
+            JOIN Usuarios u ON c.id_usuario = u.id_usuario 
+            WHERE c.id_publicacion = %s 
+            ORDER BY c.fecha_comentario DESC
+        """, (pub["id_publicacion"],))
+        pub["comentarios"] = cursor.fetchall()
+
     close_connection(conn)
 
+    # 🔁 Pasar el usuario y publicaciones al template
     return render_template("dashboard.html", user=user, publicaciones=publicaciones)
 
-
-
+# Ruta para subir reportes
 @app.route("/reportes", methods=["GET", "POST"])
 def reportes():
     if "user" not in session:
         return redirect(url_for("login"))
 
     if request.method == "POST":
-        text = request.form.get("texto")
-        file = request.files.get("imagen")
-        ubication = request.form.get("ubicacion")
+        texto = request.form.get("texto")
+        imagen = request.files.get("imagen")
+        ubicacion = request.form.get("ubicacion")
         id_usuario = session["user"]
+        filtro = request.form.get("filtro", "")
 
-        if not text or not ubication or not file:
+        if not texto or not ubicacion or not imagen:
             flash("Faltan datos.")
             return redirect(url_for("dashboard"))
 
-        if file and allowed_file(file.filename):
+        if imagen and allowed_file(imagen.filename):
             # Nombre seguro y único para el archivo
-            original_filename = secure_filename(file.filename)
+            original_filename = secure_filename(imagen.filename)
             unique_filename = f"{uuid.uuid4().hex}_{original_filename}"
             save_path = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
-            file.save(save_path)
+            imagen.save(save_path)
 
             # Guardar en base de datos
             conn = create_connection()
@@ -190,14 +202,15 @@ def reportes():
             cursor.execute("""
                 INSERT INTO publicaciones (id_usuario, descripcion, imagen, ubicacion)
                 VALUES (%s, %s, %s, %s)
-            """, (id_usuario, text, unique_filename, ubication))
+            """, (id_usuario, texto, unique_filename, ubicacion))
             conn.commit()
             close_connection(conn)
             flash("Reporte publicado con éxito")
         else:
             flash("Tipo de archivo no permitido. Solo se permiten imágenes.")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("dashboard", filtro=filtro))
 
+# Ruta para editar reportes
 @app.route('/editar/<int:post_id>', methods=['POST'])
 def editar_publicacion(post_id):
     user_id = session.get("user")
@@ -206,6 +219,7 @@ def editar_publicacion(post_id):
 
     descripcion = request.form['descripcion']
     ubicacion = request.form['ubicacion']
+    filtro = request.form.get("filtro", "")
 
     conn = create_connection()
     cursor = conn.cursor()
@@ -225,31 +239,41 @@ def editar_publicacion(post_id):
     close_connection(conn)
 
     flash("Publicación actualizada correctamente.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("dashboard", filtro=filtro))
 
+# Ruta para eliminar reportes
 @app.route('/eliminar/<int:post_id>', methods=['POST'])
 def eliminar_publicacion(post_id):
     user_id = session.get("user")
     if not user_id:
         return redirect(url_for("login"))
+    
+    filtro = request.form.get("filtro", "")
 
     conn = create_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id_usuario FROM Publicaciones WHERE id_publicacion = %s", (post_id,))
+    cursor.execute("SELECT id_usuario, imagen FROM Publicaciones WHERE id_publicacion = %s", (post_id,))
     resultado = cursor.fetchone()
 
     if not resultado or resultado[0] != user_id:
         flash("No tienes permiso para eliminar esta publicación.", "danger")
-        return redirect(url_for("dashboard"))
+        return redirect(url_for("dashboard" , filtro=filtro))
 
+    nombre_imagen = resultado[1]
+    ruta_imagen = os.path.join(app.config['UPLOAD_FOLDER'], nombre_imagen)
+    if os.path.exists(ruta_imagen):
+        os.remove(ruta_imagen)
+
+    # Eliminar la publicación
     cursor.execute("DELETE FROM Publicaciones WHERE id_publicacion = %s", (post_id,))
     conn.commit()
     close_connection(conn)
 
     flash("Publicación eliminada correctamente.", "success")
-    return redirect(url_for("dashboard"))
+    return redirect(url_for("dashboard" , filtro=filtro))
 
 
+# Ruta de los likes
 @app.route('/like/<int:post_id>', methods=['POST'])
 def like_post(post_id):
     user_id = session.get("user")
@@ -266,65 +290,89 @@ def like_post(post_id):
     existing_like = cursor.fetchone()
 
     if existing_like:
-        # Si ya le dio like, eliminarlo (dislike)
-        cursor.execute("""
-            DELETE FROM MeGusta WHERE id_megusta = %s
-        """, (existing_like["id_megusta"],))
+        cursor.execute("DELETE FROM MeGusta WHERE id_megusta = %s", (existing_like["id_megusta"],))
     else:
-        # Si no le ha dado like, insertarlo
-        cursor.execute("""
-            INSERT INTO MeGusta (id_usuario, id_publicacion) VALUES (%s, %s)
-        """, (user_id, post_id))
+        cursor.execute("INSERT INTO MeGusta (id_usuario, id_publicacion) VALUES (%s, %s)", (user_id, post_id))
 
     conn.commit()
     close_connection(conn)
-    return redirect(url_for('dashboard'))
 
-@app.route('/publicacion/<int:post_id>', methods=['GET', 'POST'])
-def ver_post(post_id):
+    # Recuperar filtro
+    filtro = request.args.get("filtro", "")
+    return redirect(url_for('dashboard', filtro=filtro))
+
+#Ruta para ingresar comentarios
+@app.route('/comentarios/<int:post_id>', methods=['GET', 'POST'])
+def comentarios(post_id):
     user_id = session.get("user")
     if not user_id:
         return redirect(url_for("login"))
+    
+    filtro = request.form.get("filtro", "")
 
     conn = create_connection()
     cursor = conn.cursor(dictionary=True)
 
-    # Procesar comentario
+    # Procesar comentario si se recibe un POST
     if request.method == "POST":
         comentario = request.form.get("comentario")
         if comentario:
+            # Insertar el comentario en la base de datos
             cursor.execute("""
                 INSERT INTO Comentarios (id_usuario, id_publicacion, contenido)
                 VALUES (%s, %s, %s)
             """, (user_id, post_id, comentario))
             conn.commit()
 
-    # Obtener datos del post
-    cursor.execute("""
-        SELECT p.*, u.nickname, u.foto_perfil 
-        FROM Publicaciones p
-        JOIN Usuarios u ON p.id_usuario = u.id_usuario
-        WHERE p.id_publicacion = %s
-    """, (post_id,))
-    post = cursor.fetchone()
+    close_connection(conn)
 
-    # Obtener comentarios
+    return redirect(url_for('dashboard', filtro=filtro))
+
+#Ruta para editar comentarios
+@app.route('/comentario/editar/<int:comentario_id>', methods=['POST'])
+def editar_comentario(comentario_id):
+    user_id = session.get("user")
+    if not user_id:
+        return redirect(url_for("login"))
+
+    nuevo_texto = request.form.get("comentario")
+    filtro = request.form.get("filtro", "")
+
+
+    conn = create_connection()
+    cursor = conn.cursor()
+
+    # Solo permite editar si el comentario es del usuario
     cursor.execute("""
-        SELECT c.*, u.nickname, u.foto_perfil
-        FROM Comentarios c
-        JOIN Usuarios u ON c.id_usuario = u.id_usuario
-        WHERE c.id_publicacion = %s
-        ORDER BY c.fecha_comentario DESC
-    """, (post_id,))
-    comentarios = cursor.fetchall()
+        UPDATE Comentarios 
+        SET contenido = %s 
+        WHERE id_comentario = %s AND id_usuario = %s
+    """, (nuevo_texto, comentario_id, user_id))
+    conn.commit()
 
     close_connection(conn)
-    return render_template("ver_post.html", post=post, comentarios=comentarios)
+    return redirect(url_for("dashboard", filtro=filtro))  
+
+#Ruta para eliminar comentarios
+@app.route('/comentario/eliminar/<int:comentario_id>', methods=['POST'])
+def eliminar_comentario(comentario_id):
+    user_id = session.get("user")
+    if not user_id:
+        return redirect(url_for("login"))
+
+    filtro = request.form.get("filtro", "")
 
 
+    conn = create_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        DELETE FROM Comentarios 
+        WHERE id_comentario = %s AND id_usuario = %s
+    """, (comentario_id, user_id))
+    conn.commit()
 
-
-
+    close_connection(conn)
+    return redirect(url_for("dashboard", filtro=filtro))
 
 
 

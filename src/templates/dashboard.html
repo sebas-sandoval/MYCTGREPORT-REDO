@@ -49,6 +49,13 @@
         .btn-link {
             text-decoration: none;
         }
+
+        .post-image {
+            max-height: 300px;
+            width: 100%;
+            object-fit: contain;
+            background-color: #f8f9fa;
+        }
     </style>
 </head>
 
@@ -68,13 +75,15 @@
 
     <div class="container-fluid mt-3">
         <div class="row">
-            <!-- Sidebar -->
             <div class="col-2">
-                <div class="sidebar text-center">
-                    <img src="{{ url_for('static', filename='imgs/' + user.foto_perfil) }}" class="profile-img mb-3"
-                        alt="avatar">
-                    <p><strong>{{ user.nombre }}</strong><br><small>@{{ user.nickname }}</small></p>
-                    <ul class="list-unstyled">
+                <div class="sidebar text-center p-3 rounded" style="background-color: white; max-height: 300px;">
+                    <img src="{{ url_for('static', filename='imgs/' + user.foto_perfil) }}" class="profile-img mb-2"
+                        alt="avatar" style="width: 80px; height: 80px; object-fit: cover; border-radius: 50%;">
+
+                    <p class="mb-2"><strong>{{ user.nombre }} {{ user.apellido }}</strong><br>
+                        <small>@{{ user.nickname }}</small>
+                    </p>
+                    <ul class="list-unstyled mb-0">
                         <li><a href="#" class="text-decoration-none">Mi Perfil</a></li>
                         <li><a href="#" class="text-decoration-none">Guardados</a></li>
                         <li><a href="#" class="text-decoration-none">Ajustes</a></li>
@@ -82,11 +91,14 @@
                 </div>
             </div>
 
+
             <!-- Publicaciones -->
             <div class="col-7">
                 <!-- Formulario para nueva publicación -->
                 <div class="input-post">
                     <form action="{{ url_for('reportes') }}" method="POST" enctype="multipart/form-data">
+                        <input type="hidden" name="filtro" value="{{ request.args.get('filtro', '') }}">
+
                         <div class="d-flex align-items-start mb-2">
                             <img src="{{ url_for('static', filename='imgs/' + user.foto_perfil) }}"
                                 class="profile-img me-2" alt="avatar">
@@ -118,7 +130,6 @@
                 {% endif %}
                 {% endwith %}
 
-                <!-- Filtro de publicaciones -->
                 <div class="input-post">
                     <form method="GET" action="{{ url_for('dashboard') }}">
                         <div class="d-flex align-items-center">
@@ -134,6 +145,7 @@
                         </div>
                     </form>
                 </div>
+
 
                 <!-- Mostrar publicaciones -->
                 {% for post in publicaciones %}
@@ -167,6 +179,68 @@
                     </div>
                     {% endif %}
 
+                    <!-- Modal de editar publicación -->
+                    <div class="modal fade" id="editarModal{{ post.id_publicacion }}" tabindex="-1" aria-hidden="true">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <form method="POST"
+                                    action="{{ url_for('editar_publicacion', post_id=post.id_publicacion) }}">
+                                    <input type="hidden" name="filtro" value="{{ request.args.get('filtro', '') }}">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">Editar publicación</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                            aria-label="Cerrar"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <div class="mb-3">
+                                            <label for="descripcion{{ post.id_publicacion }}"
+                                                class="form-label">Descripción</label>
+                                            <textarea name="descripcion" id="descripcion{{ post.id_publicacion }}"
+                                                class="form-control" required>{{ post.descripcion }}</textarea>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label for="ubicacion{{ post.id_publicacion }}"
+                                                class="form-label">Ubicación</label>
+                                            <input type="text" name="ubicacion" id="ubicacion{{ post.id_publicacion }}"
+                                                value="{{ post.ubicacion }}" class="form-control" required>
+                                        </div>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="submit" class="btn btn-primary">Guardar cambios</button>
+                                        <button type="button" class="btn btn-secondary"
+                                            data-bs-dismiss="modal">Cancelar</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Modal para eliminar -->
+                    <div class="modal fade" id="confirmarEliminarModal{{ post.id_publicacion }}" tabindex="-1"
+                        aria-hidden="true">
+                        <div class="modal-dialog">
+                            <div class="modal-content">
+                                <form method="POST"
+                                    action="{{ url_for('eliminar_publicacion', post_id=post.id_publicacion) }}">
+                                    <input type="hidden" name="filtro" value="{{ request.args.get('filtro', '') }}">
+                                    <div class="modal-header">
+                                        <h5 class="modal-title">¿Eliminar publicación?</h5>
+                                        <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                            aria-label="Cerrar"></button>
+                                    </div>
+                                    <div class="modal-body">
+                                        <p>¿Estás seguro de que deseas eliminar esta publicación?</p>
+                                    </div>
+                                    <div class="modal-footer">
+                                        <button type="submit" class="btn btn-danger">Sí, eliminar</button>
+                                        <button type="button" class="btn btn-secondary"
+                                            data-bs-dismiss="modal">Cancelar</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Encabezado-->
                     <div class="d-flex justify-content-between align-items-center mb-2 mt-4">
                         <div class="d-flex align-items-center">
@@ -186,14 +260,15 @@
 
                     <!-- Imagen -->
                     {% if post.imagen %}
-                    <img src="{{ url_for('static', filename='imgs/' + post.imagen) }}" class="img-fluid rounded mb-2"
-                        alt="Imagen del reporte">
+                    <img src="{{ url_for('static', filename='imgs/' + post.imagen) }}"
+                        class="img-fluid rounded mb-2 post-image" alt="Imagen del reporte">
                     {% endif %}
 
                     <!-- Reacciones -->
                     <div class="d-flex justify-content-between align-items-center">
-                        <!-- Botón de me encanta -->
-                        <form method="POST" action="{{ url_for('like_post', post_id=post.id_publicacion) }}">
+                        <!-- Botón de me gusta -->
+                        <form method="POST"
+                            action="{{ url_for('like_post', post_id=post.id_publicacion) }}?filtro={{ request.args.get('filtro', '') }}">
                             <button type="submit" class="btn btn-link p-0">
                                 {% if post.dio_like %}
                                 <i class="bi bi-heart-fill text-danger"></i>
@@ -204,74 +279,94 @@
                             </button>
                         </form>
 
-                        <!-- Comentarios -->
-                        <a href="{{ url_for('ver_post', post_id=post.id_publicacion) }}" class="text-decoration-none">
+                        <!-- Botón de comentarios -->
+                        <button type="button" class="text-decoration-none btn btn-link" data-bs-toggle="modal"
+                            data-bs-target="#comentariosModal{{ post.id_publicacion }}">
                             <i class="bi bi-chat-left-text"></i> {{ post.total_comentarios }}
-                        </a>
+                        </button>
                     </div>
                 </div>
 
-                <!-- editar publicación -->
-                <div class="modal fade" id="editarModal{{ post.id_publicacion }}" tabindex="-1" aria-hidden="true">
+                <!-- Modal para comentarios -->
+                <div class="modal fade" id="comentariosModal{{ post.id_publicacion }}" tabindex="-1"
+                    aria-labelledby="comentariosModalLabel" aria-hidden="true">
                     <div class="modal-dialog">
                         <div class="modal-content">
-                            <form method="POST"
-                                action="{{ url_for('editar_publicacion', post_id=post.id_publicacion) }}">
-                                <div class="modal-header">
-                                    <h5 class="modal-title">Editar publicación</h5>
-                                    <button type="button" class="btn-close" data-bs-dismiss="modal"
-                                        aria-label="Cerrar"></button>
-                                </div>
-                                <div class="modal-body">
-                                    <div class="mb-3">
-                                        <label for="descripcion{{ post.id_publicacion }}"
-                                            class="form-label">Descripción</label>
-                                        <textarea name="descripcion" id="descripcion{{ post.id_publicacion }}"
-                                            class="form-control" required>{{ post.descripcion }}</textarea>
-                                    </div>
-                                    <div class="mb-3">
-                                        <label for="ubicacion{{ post.id_publicacion }}"
-                                            class="form-label">Ubicación</label>
-                                        <input type="text" name="ubicacion" id="ubicacion{{ post.id_publicacion }}"
-                                            value="{{ post.ubicacion }}" class="form-control" required>
-                                    </div>
-                                </div>
-                                <div class="modal-footer">
-                                    <button type="submit" class="btn btn-primary">Guardar cambios</button>
-                                    <button type="button" class="btn btn-secondary"
-                                        data-bs-dismiss="modal">Cancelar</button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-                </div>
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="comentariosModalLabel">Comentarios</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                    aria-label="Close"></button>
+                            </div>
+                            <div class="modal-body">
+                                <!-- Mostrar los comentarios -->
+                                <div id="comentariosContainer{{ post.id_publicacion }}">
+                                    {% for comentario in post.comentarios %}
+                                    <div class="comentario mb-2 border rounded p-2">
+                                        <div class="d-flex justify-content-between">
+                                            <div>
+                                                <strong>{{ comentario.nickname }}</strong>
+                                                <small class="text-muted">{{ comentario.fecha_comentario }}</small>
+                                            </div>
+                                            {% if comentario.id_usuario == session['user'] %}
+                                            <div>
+                                                <!-- Botón editar -->
+                                                <button class="btn btn-outline-primary btn-sm me-1"
+                                                    data-bs-toggle="collapse"
+                                                    data-bs-target="#editarComentario{{ comentario.id_comentario }}">
+                                                    <i class="bi bi-pencil"></i>
+                                                </button>
 
-                <!-- Modal de confirmación para eliminar -->
-                <div class="modal fade" id="confirmarEliminarModal{{ post.id_publicacion }}" tabindex="-1"
-                    aria-hidden="true">
-                    <div class="modal-dialog">
-                        <div class="modal-content">
-                            <form method="POST"
-                                action="{{ url_for('eliminar_publicacion', post_id=post.id_publicacion) }}">
-                                <div class="modal-header">
-                                    <h5 class="modal-title">¿Eliminar publicación?</h5>
-                                    <button type="button" class="btn-close" data-bs-dismiss="modal"
-                                        aria-label="Cerrar"></button>
+                                                <!-- Botón eliminar -->
+                                                <form method="POST"
+                                                    action="{{ url_for('eliminar_comentario', comentario_id=comentario.id_comentario) }}"
+                                                    class="d-inline">
+                                                    <input type="hidden" name="filtro"
+                                                        value="{{ request.args.get('filtro', '') }}">
+                                                    <button type="submit" class="btn btn-outline-danger btn-sm">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </form>
+
+                                            </div>
+                                            {% endif %}
+                                        </div>
+                                        <p class="mt-2">{{ comentario.contenido }}</p>
+
+                                        <!-- Formulario para editar comentario -->
+                                        {% if comentario.id_usuario == session['user'] %}
+                                        <div class="collapse mt-2" id="editarComentario{{ comentario.id_comentario }}">
+                                            <form method="POST"
+                                                action="{{ url_for('editar_comentario', comentario_id=comentario.id_comentario) }}">
+                                                <input type="hidden" name="filtro"
+                                                    value="{{ request.args.get('filtro', '') }}">
+                                                <textarea name="comentario" class="form-control"
+                                                    required>{{ comentario.contenido }}</textarea>
+                                                <button type="submit" class="btn btn-primary btn-sm mt-2">Guardar
+                                                    cambios</button>
+                                            </form>
+
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    {% else %}
+                                    <p>No hay comentarios aún.</p>
+                                    {% endfor %}
                                 </div>
-                                <div class="modal-body">
-                                    <p>¿Estás seguro de que deseas eliminar esta publicación?</p>
-                                </div>
-                                <div class="modal-footer">
-                                    <button type="submit" class="btn btn-danger">Sí, eliminar</button>
-                                    <button type="button" class="btn btn-secondary"
-                                        data-bs-dismiss="modal">Cancelar</button>
-                                </div>
-                            </form>
+
+                                <!-- Formulario para agregar un nuevo comentario -->
+                                <form method="POST" action="{{ url_for('comentarios', post_id=post.id_publicacion) }}">
+                                    <input type="hidden" name="filtro" value="{{ request.args.get('filtro', '') }}">
+                                    <textarea name="comentario" class="form-control"
+                                        placeholder="Escribe tu comentario..." required></textarea>
+                                    <button type="submit" class="btn btn-primary mt-2">Agregar comentario</button>
+                                </form>
+                            </div>
                         </div>
                     </div>
                 </div>
 
                 {% endfor %}
+
 
             </div>
 
