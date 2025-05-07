@@ -64,8 +64,9 @@
     <div class="top-nav d-flex justify-content-between align-items-center px-4">
         <div><strong>MyCTGReport</strong></div>
         <div class="d-flex gap-3">
-            <a href="#" class="text-decoration-none text-dark fw-bold">Inicio</a>
-            <a href="#" class="text-decoration-none text-muted">Mis Reportes</a>
+            <a href="{{ url_for('dashboard' , filtro=request.args.get('filtro')) }}"
+                class="text-decoration-none text-dark fw-bold">Inicio</a>
+            <a href="{{ url_for('mis_reportes') }}" class="text-decoration-none text-muted">Mis Reportes</a>
             <a href="#" class="text-decoration-none text-muted">Notificaciones</a>
         </div>
         <div>
@@ -84,9 +85,11 @@
                         <small>@{{ user.nickname }}</small>
                     </p>
                     <ul class="list-unstyled mb-0">
-                        <li><a href="#" class="text-decoration-none">Mi Perfil</a></li>
+                        <li><a href="{{ url_for('perfil_usuario', id_usuario=user.id_usuario, filtro=request.args.get('filtro')) }}"
+                                class="text-decoration-none">Mi Perfil</a>
+                        </li>
                         <li><a href="#" class="text-decoration-none">Guardados</a></li>
-                        <li><a href="#" class="text-decoration-none">Ajustes</a></li>
+                        <li><a href="{{ url_for('ajustes_informacion') }}" class="text-decoration-none">Ajustes</a></li>
                     </ul>
                 </div>
             </div>
@@ -130,6 +133,7 @@
                 {% endif %}
                 {% endwith %}
 
+                <!--- Filtro de publicaciones -->
                 <div class="input-post">
                     <form method="GET" action="{{ url_for('dashboard') }}">
                         <div class="d-flex align-items-center">
@@ -215,7 +219,7 @@
                         </div>
                     </div>
 
-                    <!-- Modal para eliminar -->
+                    <!-- Modal para eliminar publicacion -->
                     <div class="modal fade" id="confirmarEliminarModal{{ post.id_publicacion }}" tabindex="-1"
                         aria-hidden="true">
                         <div class="modal-dialog">
@@ -247,7 +251,10 @@
                             <img src="{{ url_for('static', filename='imgs/' + post.foto_perfil) }}"
                                 class="small-img me-2">
                             <div>
-                                <strong>{{ post.nickname }}</strong><br>
+                                <a href="{{ url_for('perfil_usuario', id_usuario=post.id_usuario , filtro=request.args.get('filtro')) }}"
+                                    class="text-decoration-none text-dark fw-bold"><strong>{{ post.nickname
+                                        }}</strong></a>
+                                <br>
                                 <small class="text-muted">{{ post.fecha_publicacion.strftime('%d/%m/%Y %H:%M')
                                     }}</small><br>
                                 <small><i class="bi bi-geo-alt text-danger"></i> {{ post.ubicacion }}</small>

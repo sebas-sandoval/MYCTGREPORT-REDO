@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mis reportes</title>
+
+    <!-- Bootstrap y Bootstrap Icons -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <style>
+        body {
+            background-color: #f5f5f5;
+        }
+
+        .top-nav {
+            background-color: white;
+            padding: 1rem;
+            border-bottom: 1px solid #ddd;
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Top Navigation -->
+    <div class="top-nav d-flex justify-content-between align-items-center px-4">
+        <div><strong>MyCTGReport</strong></div>
+        <div class="d-flex gap-3">
+            <a href="{{ url_for('dashboard') }}" class="text-decoration-none text-muted">Inicio</a>
+            <a href="{{ url_for('mis_reportes') }}" class="text-decoration-none text-muted text-dark fw-bold">Mis
+                Reportes</a>
+            <a href="#" class="text-decoration-none text-muted">Notificaciones</a>
+        </div>
+        <div>
+            <a href="{{ url_for('logout') }}" class="btn btn-outline-danger">Cerrar sesión</a>
+        </div>
+    </div>
+
+    <div class="container mt-5">
+        <div class="card shadow-sm rounded">
+            <div class="card-header bg-white border-bottom">
+                <h4 class="mb-0">Mis Reportes</h4>
+            </div>
+            <div class="card-body p-4">
+
+                {% if reportes %}
+                <div class="list-group">
+                    {% for reporte in reportes %}
+                    <div class="list-group-item d-flex justify-content-between align-items-center rounded border mt-2">
+                        <div>
+                            <div><strong>{{ reporte.descripcion }}</strong></div>
+                            <small class="text-muted">subido, {{ reporte.fecha_publicacion.strftime('%d/%m/%y')
+                                }}</small>
+                        </div>
+                        <span class="badge bg-light text-dark border">
+                            {% if reporte.estado == 'sin revisar' %}
+                            Pendiente
+                            {% elif reporte.estado == 'en proceso' %}
+                            En Progreso
+                            {% elif reporte.estado == 'completado' %}
+                            Completado
+                            {% else %}
+                            Desconocido
+                            {% endif %}
+                        </span>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted">No has subido reportes aún.</p>
+                {% endif %}
+
+            </div>
+        </div>
+    </div>
+
+
+</body>
+
+</html>

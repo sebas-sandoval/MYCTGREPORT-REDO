@@ -131,7 +131,7 @@ def dashboard():
     cursor.execute("SELECT * FROM usuarios WHERE id_usuario = %s", (user_id,))
     user = cursor.fetchone()
 
-    # Obtener el filtro desde la URL
+    
     filtro = request.args.get("filtro")
 
     orden = "p.fecha_publicacion DESC" 
@@ -169,7 +169,6 @@ def dashboard():
 
     close_connection(conn)
 
-    # 🔁 Pasar el usuario y publicaciones al template
     return render_template("dashboard.html", user=user, publicaciones=publicaciones)
 
 # Ruta para subir reportes
@@ -297,7 +296,6 @@ def like_post(post_id):
     conn.commit()
     close_connection(conn)
 
-    # Recuperar filtro
     filtro = request.args.get("filtro", "")
     return redirect(url_for('dashboard', filtro=filtro))
 
@@ -313,7 +311,7 @@ def comentarios(post_id):
     conn = create_connection()
     cursor = conn.cursor(dictionary=True)
 
-    # Procesar comentario si se recibe un POST
+    # Procesar comentario
     if request.method == "POST":
         comentario = request.form.get("comentario")
         if comentario:
@@ -362,7 +360,6 @@ def eliminar_comentario(comentario_id):
 
     filtro = request.form.get("filtro", "")
 
-
     conn = create_connection()
     cursor = conn.cursor()
     cursor.execute("""
@@ -374,6 +371,239 @@ def eliminar_comentario(comentario_id):
     close_connection(conn)
     return redirect(url_for("dashboard", filtro=filtro))
 
+#Ruta para seguir y dejar de seguir usuarios
+@app.route('/seguir/<int:id_seguido>', methods=['POST'])
+def toggle_seguir(id_seguido):
+    id_seguidor = session.get('user')
+    filtro = request.args.get('filtro')
+
+    if not id_seguidor:
+        flash("Debes iniciar sesión para seguir a otros usuarios.", "warning")
+        return redirect(url_for('login'))
+
+    if id_seguidor == id_seguido:
+        flash("No puedes seguirte a ti mismo.", "danger")
+        return redirect(url_for('perfil_usuario', id_usuario=id_seguido))
+
+    conn = create_connection()
+    if not conn:
+        flash("No se pudo conectar a la base de datos.", "danger")
+        return redirect(url_for('perfil_usuario', id_usuario=id_seguido))
+
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT 1 FROM Seguidores 
+        WHERE id_seguidor = %s AND id_seguido = %s
+    """, (id_seguidor, id_seguido))
+    ya_sigue = cursor.fetchone()
+
+    if ya_sigue:
+        cursor.execute("""
+            DELETE FROM Seguidores 
+            WHERE id_seguidor = %s AND id_seguido = %s
+        """, (id_seguidor, id_seguido))
+        flash("Has dejado de seguir al usuario.", "info")
+    else:
+        cursor.execute("""
+            INSERT IGNORE INTO Seguidores (id_seguidor, id_seguido)
+            VALUES (%s, %s)
+        """, (id_seguidor, id_seguido))
+        flash("Ahora sigues a este usuario.", "success")
+
+    conn.commit()
+    cursor.close()
+    close_connection(conn)
+
+    return redirect(url_for('perfil_usuario', id_usuario=id_seguido, filtro=filtro ))
+
+#Ruta para ver el perfil del usuario
+@app.route('/perfil/<int:id_usuario>')
+def perfil_usuario(id_usuario):
+    id_actual = session.get('user')  
+    filtro = request.args.get('filtro')
+
+    conn = create_connection()
+    if not conn:
+        flash("Error al conectar con la base de datos", "danger")
+        return redirect(url_for("dashboard"))
+
+    cursor = conn.cursor(dictionary=True)
+
+    # Obtener datos del usuario
+    cursor.execute("SELECT * FROM Usuarios WHERE id_usuario = %s", (id_usuario,))
+    usuario = cursor.fetchone()
+    if not usuario:
+        flash("El usuario no fue encontrado", "warning")
+        cursor.close()
+        close_connection(conn)
+        return redirect(url_for("dashboard"))
+
+    # Contar publicaciones
+    cursor.execute("SELECT COUNT(*) AS total FROM Publicaciones WHERE id_usuario = %s", (id_usuario,))
+    publicaciones_count = cursor.fetchone()['total']
+
+    # Contar seguidores
+    cursor.execute("SELECT COUNT(*) AS total FROM Seguidores WHERE id_seguido = %s", (id_usuario,))
+    seguidores_count = cursor.fetchone()['total']
+
+    # Contar seguidos
+    cursor.execute("SELECT COUNT(*) AS total FROM Seguidores WHERE id_seguidor = %s", (id_usuario,))
+    seguidos_count = cursor.fetchone()['total']
+
+    # Obtener lista de seguidores 
+    cursor.execute("""
+        SELECT u.* FROM Seguidores s
+        JOIN Usuarios u ON s.id_seguidor = u.id_usuario
+        WHERE s.id_seguido = %s
+    """, (id_usuario,))
+    seguidores = cursor.fetchall()
+
+    # Obtener lista de seguidos
+    cursor.execute("""
+        SELECT u.* FROM Seguidores s
+        JOIN Usuarios u ON s.id_seguido = u.id_usuario
+        WHERE s.id_seguidor = %s
+    """, (id_usuario,))
+    seguidos = cursor.fetchall()
+
+    # Verificar si el usuario actual ya sigue al usuario del perfil
+    ya_sigue = False
+    if id_actual and id_actual != id_usuario:
+        cursor.execute("""
+            SELECT 1 FROM Seguidores
+            WHERE id_seguidor = %s AND id_seguido = %s
+        """, (id_actual, id_usuario))
+        ya_sigue = cursor.fetchone() is not None
+
+    cursor.close()
+    close_connection(conn)
+
+    return render_template('profile.html',
+                        usuario_perfil=usuario,
+                        publicaciones_count=publicaciones_count,
+                        seguidores_count=seguidores_count,
+                        seguidos_count=seguidos_count,
+                        seguidores=seguidores,
+                        seguidos=seguidos,
+                        ya_sigue=ya_sigue,
+                        filtro=filtro)
+
+# Ruta para los ajustes
+@app.route('/ajustes/informacion', methods=['GET', 'POST'])
+def ajustes_informacion():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+
+    conn = create_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    if request.method == 'POST':
+        nombres = request.form['nombres']
+        apellidos = request.form['apellidos']
+        nickname = request.form['nickname']
+        correo = request.form['correo']
+        telefono = request.form['telefono']
+        residencia = request.form['residencia']
+
+        # Manejar foto de perfil
+        foto = request.files.get('nueva_foto')
+        if foto and allowed_file(foto.filename):
+            # Generar nombre seguro y único
+            original_filename = secure_filename(foto.filename)
+            unique_filename = f"{uuid.uuid4().hex}_{original_filename}"
+            filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
+
+            # Obtener foto actual del usuario
+            cursor.execute("SELECT foto_perfil FROM Usuarios WHERE id_usuario = %s", (session['user'],))
+            usuario = cursor.fetchone()
+            foto_actual = usuario['foto_perfil']
+
+            # Eliminar la foto anterior si no es la predeterminada
+            if foto_actual != 'default.jpg':
+                foto_actual_path = os.path.join(app.config['UPLOAD_FOLDER'], foto_actual)
+                if os.path.exists(foto_actual_path):
+                    os.remove(foto_actual_path)
+
+            # Guardar la nueva foto
+            foto.save(filepath)
+
+            # Actualizar datos incluyendo nueva foto
+            cursor.execute(""" 
+                UPDATE Usuarios 
+                SET nombre = %s, apellido = %s, nickname = %s, correo = %s, telefono = %s,
+                    residencia = %s, foto_perfil = %s
+                WHERE id_usuario = %s
+            """, (nombres, apellidos, nickname, correo, telefono, residencia, unique_filename, session['user']))
+            flash('Información y foto de perfil actualizadas correctamente.', 'success')
+        else:
+            # Actualizar solo los datos personales si no hay foto nueva
+            cursor.execute("""
+                UPDATE Usuarios 
+                SET nombre = %s, apellido = %s, nickname = %s, correo = %s, telefono = %s,
+                    residencia = %s
+                WHERE id_usuario = %s
+            """, (nombres, apellidos, nickname, correo, telefono, residencia, session['user']))
+            flash('Información actualizada correctamente.', 'success')
+
+        conn.commit()
+
+    cursor.execute("SELECT * FROM Usuarios WHERE id_usuario = %s", (session['user'],))
+    usuario = cursor.fetchone()
+    close_connection(conn)
+
+    return render_template('settings.html', usuario=usuario)
+
+
+#Ruta para actualizar la información del usuario
+@app.route('/actualizar_usuario', methods=['POST'])
+def actualizar_usuario():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+
+    id_usuario = session['user']
+    conn = create_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        UPDATE Usuarios SET nombre = %s, apellido = %s, nickname = %s, correo = %s, telefono = %s, residencia = %s
+        WHERE id_usuario = %s
+    """, (
+        request.form['nombres'],
+        request.form['apellidos'],
+        request.form['nickname'],
+        request.form['correo'],
+        request.form['telefono'],
+        request.form['residencia'],
+        id_usuario
+    ))
+
+    conn.commit()
+    close_connection(conn)
+
+    flash('Datos actualizados exitosamente.', 'success')
+    return redirect(url_for('ajustes_informacion'))
+
+
+@app.route('/mis_reportes')
+def mis_reportes():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+
+    conn = create_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("""
+        SELECT descripcion, fecha_publicacion, estado 
+        FROM Publicaciones 
+        WHERE id_usuario = %s 
+        ORDER BY fecha_publicacion DESC
+    """, (session['user'],))
+
+    reportes = cursor.fetchall()
+    close_connection(conn)
+
+    return render_template('reports.html', reportes=reportes)
 
 
 if __name__ == '__main__':
