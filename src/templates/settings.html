@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ajustes - Información Personal</title>
+    <title>Ajustes - {{ seccion_activa|capitalize }}</title>
 
     <!-- Bootstrap y Bootstrap Icons -->
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
@@ -20,6 +20,11 @@
             background-color: white;
             padding: 1rem;
             border-bottom: 1px solid #ddd;
+        }
+
+        .active-link {
+            color: #0d6efd !important;
+            font-weight: bold;
         }
     </style>
 </head>
@@ -45,22 +50,26 @@
             <ul class="list-unstyled">
                 <li class="mb-4">
                     <i class="bi bi-person-circle me-2"></i>
-                    <a href="{{ url_for('ajustes_informacion') }}"
-                        class="text-decoration-none text-dark fw-bold">Información Personal</a>
+                    <a href="{{ url_for('ajustes', seccion='informacion') }}"
+                        class="text-decoration-none {% if seccion_activa == 'informacion' %}active-link{% else %}text-dark{% endif %}">Información
+                        Personal</a>
                 </li>
                 <li class="mb-4">
                     <i class="bi bi-shield-lock-fill me-2"></i>
-                    <a href="#" class="text-decoration-none text-dark">Seguridad</a>
+                    <a href="{{ url_for('ajustes', seccion='seguridad') }}"
+                        class="text-decoration-none {% if seccion_activa == 'seguridad' %}active-link{% else %}text-dark{% endif %}">Seguridad</a>
                 </li>
                 <li>
                     <i class="bi bi-bell-fill me-2"></i>
-                    <a href="#" class="text-decoration-none text-dark">Notificaciones</a>
+                    <a href="{{ url_for('ajustes', seccion='notificaciones') }}"
+                        class="text-decoration-none {% if seccion_activa == 'notificaciones' %}active-link{% else %}text-dark{% endif %}">Notificaciones</a>
                 </li>
             </ul>
         </div>
 
         <!-- Main Content -->
         <div class="flex-grow-1 p-5 bg-white border">
+            {% if seccion_activa == 'informacion' %}
             <h4>Información Personal</h4>
             <form method="POST" enctype="multipart/form-data">
                 <div class="mb-4 d-flex align-items-center">
@@ -109,6 +118,123 @@
                 <button type="submit" class="btn btn-primary">Guardar Cambios</button>
             </form>
 
+            {% elif seccion_activa == 'seguridad' %}
+            <h4>Seguridad</h4>
+
+            <div class="row mb-4">
+                <div class="col-md-4">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <i class="bi bi-lock" style="font-size: 2rem;"></i>
+                            <p class="card-text mt-2">
+                                Último inicio de sesión<br>
+                                <small class="text-muted">
+                                    {% if ultimo_inicio_sesion %}
+                                    {{ ultimo_inicio_sesion.strftime('%d/%m/%y %H:%M') }}
+                                    {% if ip_inicio_sesion %} (IP: {{ ip_inicio_sesion }}){% endif %}
+                                    {% else %}
+                                    No disponible
+                                    {% endif %}
+                                </small>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="card text-center">
+                        <div class="card-body">
+                            <i class="bi bi-key" style="font-size: 2rem;"></i>
+                            <p class="card-text mt-2">
+                                Último cambio de contraseña<br>
+                                <small class="text-muted">
+                                    {% if ultimo_cambio_contrasena %}
+                                    {{ ultimo_cambio_contrasena.strftime('%d/%m/%y %H:%M') }}
+                                    {% if ip_cambio_contrasena %} (IP: {{ ip_cambio_contrasena }}){% endif %}
+                                    {% else %}
+                                    No disponible
+                                    {% endif %}
+                                </small>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="col-md-4">
+                    <div class="card text-center" role="button" data-bs-toggle="modal"
+                        data-bs-target="#codigoSeguridadModal">
+                        <div class="card-body">
+                            <i class="bi bi-shield-lock" style="font-size: 2rem;"></i>
+                            <p class="card-text mt-2">
+                                Códigos de seguridad<br>
+                                <small class="text-muted">
+                                    {% if codigos %}Activos{% else %}No activos{% endif %}
+                                </small>
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Modal de codigos de seguridad -->
+            <div class="modal fade" id="codigoSeguridadModal" tabindex="-1" aria-labelledby="codigoSeguridadLabel"
+                aria-hidden="true">
+                <div class="modal-dialog modal-dialog-centered">
+                    <div class="modal-content text-center">
+                        <div class="modal-header">
+                            <h5 class="modal-title">Gestión de Códigos de Seguridad</h5>
+                            <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                aria-label="Cerrar"></button>
+                        </div>
+                        <div class="modal-body">
+                            {% if codigos %}
+                            <p><strong>Tus códigos actuales:</strong></p>
+                            <ul class="list-group mb-3">
+                                {% for codigo in codigos %}
+                                <li class="list-group-item">{{ codigo }}</li>
+                                {% endfor %}
+                            </ul>
+                            {% else %}
+                            <p>No tienes códigos activos.</p>
+                            {% endif %}
+
+                            <form method="POST" class="d-inline">
+                                <input type="hidden" name="accion" value="generar">
+                                <button type="submit" class="btn btn-success mb-2">Generar 4 nuevos códigos</button>
+                            </form>
+
+                            {% if codigos %}
+                            <form method="POST" class="d-inline">
+                                <input type="hidden" name="accion" value="eliminar">
+                                <button type="submit" class="btn btn-danger mb-2">Eliminar códigos</button>
+                            </form>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card p-4 mt-4">
+                <h5 class="text-center">Opciones de seguridad</h5>
+                <div class="text-center">
+                    <form method="POST" action="" class="d-inline">
+                        <button type="submit" class="btn btn-light border mb-2">Cambiar Contraseña</button>
+                    </form>
+                    <br>
+                    <form method="POST" action="" class="d-inline">
+                        <button type="submit" class="btn btn-danger">Eliminar cuenta</button>
+                    </form>
+                </div>
+            </div>
+
+
+            {% elif seccion_activa == 'notificaciones' %}
+            <h4>Notificaciones</h4>
+            <p>Aquí podrías permitir configurar si el usuario quiere recibir correos o notificaciones dentro de la
+                app.
+            </p>
+            {% endif %}
+
             <br><br>
 
             <!-- Mensajes flash -->
@@ -126,7 +252,6 @@
             {% endwith %}
 
         </div>
-
     </div>
 
 </body>

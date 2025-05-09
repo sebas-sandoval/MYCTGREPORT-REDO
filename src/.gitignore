@@ -28,7 +28,8 @@ Thumbs.db
 .poetry/
 
 # HTML/CSS compilado automáticamente (si aplica)
-staticfiles/
+static/imgs/
+
 
 # Archivos creados por Flask
 instance/
