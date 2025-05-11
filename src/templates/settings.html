@@ -218,15 +218,87 @@
                 <h5 class="text-center">Opciones de seguridad</h5>
                 <div class="text-center">
                     <form method="POST" action="" class="d-inline">
-                        <button type="submit" class="btn btn-light border mb-2">Cambiar Contraseña</button>
+                        <button type="button" class="btn btn-light border mb-2" data-bs-toggle="modal"
+                            data-bs-target="#modalCambiarContrasena">
+                            Cambiar Contraseña
+                        </button>
                     </form>
                     <br>
                     <form method="POST" action="" class="d-inline">
-                        <button type="submit" class="btn btn-danger">Eliminar cuenta</button>
+                        <button type="button" class="btn btn-danger" data-bs-toggle="modal"
+                            data-bs-target="#modalEliminarCuenta">
+                            Eliminar cuenta
+                        </button>
                     </form>
                 </div>
             </div>
 
+            <!-- Modal para cambiar contraseña -->
+            <div class="modal fade" id="modalCambiarContrasena" tabindex="-1"
+                aria-labelledby="modalCambiarContrasenaLabel" aria-hidden="true">
+                <div class="modal-dialog">
+                    <form method="POST">
+                        <input type="hidden" name="accion" value="cambiar_contrasena">
+                        <div class="modal-content">
+                            <div class="modal-header">
+                                <h5 class="modal-title" id="modalCambiarContrasenaLabel">Cambiar Contraseña</h5>
+                                <button type="button" class="btn-close" data-bs-dismiss="modal"
+                                    aria-label="Cerrar"></button>
+                            </div>
+                            <div class="modal-body">
+                                <div class="mb-3">
+                                    <label for="contrasena_actual" class="form-label">Contraseña actual</label>
+                                    <input type="password" class="form-control" name="contrasena_actual" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="nueva_contrasena" class="form-label">Nueva contraseña</label>
+                                    <input type="password" class="form-control" name="nueva_contrasena" required>
+                                </div>
+                                <div class="mb-3">
+                                    <label for="confirmar_contrasena" class="form-label">Confirmar nueva
+                                        contraseña</label>
+                                    <input type="password" class="form-control" name="confirmar_contrasena" required>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <button type="submit" class="btn btn-primary">Cambiar</button>
+                                <button type="button" class="btn btn-secondary"
+                                    data-bs-dismiss="modal">Cancelar</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Modal de eliminar cuenta -->
+            <div class="modal fade" id="modalEliminarCuenta" tabindex="-1" aria-labelledby="modalEliminarCuentaLabel"
+                aria-hidden="true">
+                <div class="modal-dialog">
+                    <form method="POST">
+                        <div class="modal-content">
+                            <div class="modal-header bg-danger text-white">
+                                <h5 class="modal-title" id="modalEliminarCuentaLabel">Confirmar eliminación</h5>
+                                <button type="button" class="btn-close btn-close-white"
+                                    data-bs-dismiss="modal"></button>
+                            </div>
+                            <div class="modal-body">
+                                <p>¿Estás seguro de que deseas eliminar tu cuenta? Esta acción es irreversible.</p>
+                                <div class="mb-3">
+                                    <label for="contrasena_confirmacion" class="form-label">Confirma tu
+                                        contraseña:</label>
+                                    <input type="password" class="form-control" name="contrasena_confirmacion" required>
+                                </div>
+                            </div>
+                            <div class="modal-footer">
+                                <input type="hidden" name="accion" value="eliminar_cuenta">
+                                <button type="button" class="btn btn-secondary"
+                                    data-bs-dismiss="modal">Cancelar</button>
+                                <button type="submit" class="btn btn-danger">Eliminar cuenta</button>
+                            </div>
+                        </div>
+                    </form>
+                </div>
+            </div>
 
             {% elif seccion_activa == 'notificaciones' %}
             <h4>Notificaciones</h4>

@@ -497,7 +497,6 @@ def perfil_usuario(id_usuario):
                         ya_sigue=ya_sigue,
                         filtro=filtro)
 
-# Ruta para los ajustes
 @app.route('/ajustes/<seccion>', methods=['GET', 'POST'])
 def ajustes(seccion):
     if 'user' not in session:
@@ -510,15 +509,15 @@ def ajustes(seccion):
     cursor.execute("SELECT * FROM Usuarios WHERE id_usuario = %s", (session['user'],))
     usuario = cursor.fetchone()
 
-    # Variables por defecto para seguridad
+    # Variables por defecto
     ultimo_inicio_sesion = None
     ip_inicio_sesion = None
     ultimo_cambio_contrasena = None
     ip_cambio_contrasena = None
     codigos = []
 
+    # Sección: INFORMACIÓN
     if request.method == 'POST' and seccion == 'informacion':
-
         nombres = request.form['nombres']
         apellidos = request.form['apellidos']
         nickname = request.form['nickname']
@@ -527,33 +526,28 @@ def ajustes(seccion):
         residencia = request.form['residencia']
         foto = request.files.get('nueva_foto')
 
-        # Valida que ningún campo requerido esté vacío
         if not all([nombres.strip(), apellidos.strip(), nickname.strip(), correo.strip(), telefono.strip(), residencia.strip()]):
-            flash('Todos los campos son obligatorios. Por favor, completa todos los campos.', 'danger')
+            flash('Todos los campos son obligatorios.', 'danger')
             close_connection(conn)
             return redirect(url_for('ajustes', seccion='informacion'))
 
-        # Valida si el correo ya existe en otro usuario
         cursor.execute("SELECT id_usuario FROM Usuarios WHERE correo = %s AND id_usuario != %s", (correo, session['user']))
         if cursor.fetchone():
             flash('El correo ya está en uso por otro usuario.', 'danger')
             close_connection(conn)
             return redirect(url_for('ajustes', seccion='informacion'))
 
-        # Valida si el nickname ya existe en otro usuario
         cursor.execute("SELECT id_usuario FROM Usuarios WHERE nickname = %s AND id_usuario != %s", (nickname, session['user']))
         if cursor.fetchone():
             flash('El nickname ya está en uso por otro usuario.', 'danger')
             close_connection(conn)
             return redirect(url_for('ajustes', seccion='informacion'))
 
-        # Maneja foto de perfil si es que se sube una nueva
         if foto and allowed_file(foto.filename):
             original_filename = secure_filename(foto.filename)
             unique_filename = f"{uuid.uuid4().hex}_{original_filename}"
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
 
-            # Elimina la foto actual si no es la predeterminada
             foto_actual = usuario['foto_perfil']
             if foto_actual != 'default.jpg':
                 foto_actual_path = os.path.join(app.config['UPLOAD_FOLDER'], foto_actual)
@@ -561,37 +555,30 @@ def ajustes(seccion):
                     os.remove(foto_actual_path)
 
             foto.save(filepath)
-
-            # Actualiza con nueva foto
-            cursor.execute("""
-                UPDATE Usuarios
-                SET nombre = %s, apellido = %s, nickname = %s, correo = %s, telefono = %s,
-                    residencia = %s, foto_perfil = %s
-                WHERE id_usuario = %s
-            """, (nombres, apellidos, nickname, correo, telefono, residencia, unique_filename, session['user']))
-            flash('Información y foto de perfil actualizadas correctamente.', 'success')
+            foto_final = unique_filename
         else:
-            cursor.execute("""
-                UPDATE Usuarios
-                SET nombre = %s, apellido = %s, nickname = %s, correo = %s, telefono = %s,
-                    residencia = %s
-                WHERE id_usuario = %s
-            """, (nombres, apellidos, nickname, correo, telefono, residencia, session['user']))
-            flash('Información actualizada correctamente.', 'success')
+            foto_final = usuario['foto_perfil']
 
+        cursor.execute("""
+            UPDATE Usuarios
+            SET nombre = %s, apellido = %s, nickname = %s, correo = %s, telefono = %s,
+                residencia = %s, foto_perfil = %s
+            WHERE id_usuario = %s
+        """, (nombres, apellidos, nickname, correo, telefono, residencia, foto_final, session['user']))
         conn.commit()
+        flash('Información actualizada correctamente.', 'success')
 
-        # Recarga datos del usuario
+        # Recarga datos
         cursor.execute("SELECT * FROM Usuarios WHERE id_usuario = %s", (session['user'],))
         usuario = cursor.fetchone()
 
+    # Sección: SEGURIDAD
     elif seccion == 'seguridad':
-        # Obtiene eventos recientes de seguridad
         cursor.execute("""
             SELECT tipo_evento, fecha_evento, ip_dispositivo
             FROM RegistroActividad
             WHERE id_usuario = %s
-            AND tipo_evento IN ('inicio de sesi\u00f3n', 'cambio de contrase\u00f1a')
+            AND tipo_evento IN ('inicio de sesión', 'cambio de contraseña')
             ORDER BY fecha_evento DESC
         """, (session['user'],))
         eventos = cursor.fetchall()
@@ -606,24 +593,84 @@ def ajustes(seccion):
             if ultimo_inicio_sesion and ultimo_cambio_contrasena:
                 break
 
-        # Procesa acciones para códigos de seguridad
         if request.method == 'POST':
             accion = request.form.get('accion')
+
             if accion == 'generar':
                 cursor.execute("DELETE FROM CodigosSeguridad WHERE id_usuario = %s", (session['user'],))
-                # Genera 4 códigos de seguridad únicos
                 for _ in range(4):
-                    codigo = ''.join(uuid.uuid4().hex[:10])  # Genera un código único de 10 caracteres
+                    codigo = uuid.uuid4().hex[:10]
                     cursor.execute("""
                         INSERT INTO CodigosSeguridad (id_usuario, codigo, expiracion)
                         VALUES (%s, %s, NOW() + INTERVAL 1 YEAR)
                     """, (session['user'], codigo))
                 conn.commit()
                 flash('Se generaron nuevos códigos de seguridad.', 'success')
+
             elif accion == 'eliminar':
                 cursor.execute("DELETE FROM CodigosSeguridad WHERE id_usuario = %s", (session['user'],))
                 conn.commit()
                 flash('Códigos de seguridad eliminados.', 'warning')
+
+            elif accion == 'cambiar_contrasena':
+                contrasena_actual = request.form['contrasena_actual']
+                nueva_contrasena = request.form['nueva_contrasena']
+                confirmar_contrasena = request.form['confirmar_contrasena']
+
+                if nueva_contrasena != confirmar_contrasena:
+                    flash('Las nuevas contraseñas no coinciden.', 'warning')
+                else:
+                    cursor.execute("SELECT contrasena FROM Usuarios WHERE id_usuario = %s", (session['user'],))
+                    resultado = cursor.fetchone()
+
+                    if not resultado or resultado['contrasena'] != contrasena_actual:
+                        flash('La contraseña actual no es correcta.', 'danger')
+                    else:
+                        cursor.execute("UPDATE Usuarios SET contrasena = %s WHERE id_usuario = %s", (nueva_contrasena, session['user']))
+                        cursor.execute("""
+                            INSERT INTO RegistroActividad (id_usuario, tipo_evento, ip_dispositivo)
+                            VALUES (%s, 'cambio de contraseña', %s)
+                        """, (session['user'], request.remote_addr))
+                        conn.commit()
+                        flash('Contraseña actualizada correctamente.', 'success')
+            elif accion == 'eliminar_cuenta':
+                contrasena_confirmacion = request.form['contrasena_confirmacion']
+
+                cursor.execute("SELECT contrasena FROM Usuarios WHERE id_usuario = %s", (session['user'],))
+                resultado = cursor.fetchone()
+
+                if not resultado or resultado['contrasena'] != contrasena_confirmacion:
+                    flash('La contraseña ingresada es incorrecta.', 'danger')
+                else:
+                    #Elimina la foto de perfil
+                    cursor.execute("SELECT foto_perfil FROM Usuarios WHERE id_usuario = %s", (session['user'],))
+                    perfil = cursor.fetchone()
+                    if perfil and perfil['foto_perfil'] and perfil['foto_perfil'] != 'default.jpg':
+                        ruta_foto_perfil = os.path.join(app.config['UPLOAD_FOLDER'], perfil['foto_perfil'])
+                        if os.path.exists(ruta_foto_perfil):
+                            os.remove(ruta_foto_perfil)
+
+                    #Elimina las fotos de publicaciones del usuario
+                    cursor.execute("SELECT imagen FROM Publicaciones WHERE id_usuario = %s", (session['user'],))
+                    publicaciones = cursor.fetchall()
+                    for pub in publicaciones:
+                        if pub['imagen']:
+                            ruta_imagen = os.path.join(app.config['UPLOAD_FOLDER'], pub['imagen'])
+                            if os.path.exists(ruta_imagen):
+                                os.remove(ruta_imagen)
+
+                    #Elimina los registros de la base de datos
+                    cursor.execute("DELETE FROM CodigosSeguridad WHERE id_usuario = %s", (session['user'],))
+                    cursor.execute("DELETE FROM RegistroActividad WHERE id_usuario = %s", (session['user'],))
+                    cursor.execute("DELETE FROM Comentarios WHERE id_usuario = %s", (session['user'],))
+                    cursor.execute("DELETE FROM Publicaciones WHERE id_usuario = %s", (session['user'],))
+                    cursor.execute("DELETE FROM Usuarios WHERE id_usuario = %s", (session['user'],))
+                    conn.commit()
+
+                    session.clear()
+                    flash('Tu cuenta ha sido eliminada permanentemente.', 'success')
+                    return redirect(url_for('login'))
+            
 
         cursor.execute("SELECT codigo FROM CodigosSeguridad WHERE id_usuario = %s", (session['user'],))
         codigos = [row['codigo'] for row in cursor.fetchall()]
@@ -640,6 +687,7 @@ def ajustes(seccion):
         ip_cambio_contrasena=ip_cambio_contrasena,
         codigos=codigos
     )
+
 
 #Ruta para historial de reportes
 @app.route('/mis_reportes')
