@@ -26,6 +26,21 @@
             color: #0d6efd !important;
             font-weight: bold;
         }
+
+        .notificaciones-config {
+            padding: 20px;
+            background-color: #f9f9f9;
+            border-radius: 10px;
+        }
+
+        .opcion {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin: 10px 0;
+            border-bottom: 1px solid #ccc;
+            padding-bottom: 10px;
+        }
     </style>
 </head>
 
@@ -37,7 +52,7 @@
         <div class="d-flex gap-3">
             <a href="{{ url_for('dashboard') }}" class="text-decoration-none text-muted">Inicio</a>
             <a href="{{ url_for('mis_reportes') }}" class="text-decoration-none text-muted">Mis Reportes</a>
-            <a href="#" class="text-decoration-none text-muted">Notificaciones</a>
+            <a href="{{ url_for('mis_notificaciones') }}" class="text-decoration-none text-muted">Notificaciones</a>
         </div>
         <div>
             <a href="{{ url_for('logout') }}" class="btn btn-outline-danger">Cerrar sesión</a>
@@ -301,11 +316,35 @@
             </div>
 
             {% elif seccion_activa == 'notificaciones' %}
-            <h4>Notificaciones</h4>
-            <p>Aquí podrías permitir configurar si el usuario quiere recibir correos o notificaciones dentro de la
-                app.
-            </p>
+            <div class="container mt-4">
+                <h4 class="mb-4">Preferencias de Notificaciones</h4>
+                <form method="POST">
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" id="seguido" name="seguido" {% if
+                            preferencias.not_seguidos %}checked{% endif %}>
+                        <label class="form-check-label" for="seguido">Notificaciones de seguidos</label>
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" id="reporte" name="reporte" {% if
+                            preferencias.not_reportes %}checked{% endif %}>
+                        <label class="form-check-label" for="reporte">Notificaciones de reportes</label>
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" id="reaccion" name="reaccion" {% if
+                            preferencias.not_reacciones %}checked{% endif %}>
+                        <label class="form-check-label" for="reaccion">Notificaciones de reacciones</label>
+                    </div>
+                    <div class="form-check form-switch mb-3">
+                        <input class="form-check-input" type="checkbox" id="personalizada" name="personalizada" {% if
+                            preferencias.not_personalizadas %}checked{% endif %}>
+                        <label class="form-check-label" for="personalizada">Notificaciones personalizadas</label>
+                    </div>
+                    <button type="submit" class="btn btn-primary mt-3">Guardar cambios</button>
+                </form>
+            </div>
             {% endif %}
+
+
 
             <br><br>
 

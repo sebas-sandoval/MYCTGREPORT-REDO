@@ -33,7 +33,7 @@
             <a href="{{ url_for('dashboard' , filtro=request.args.get('filtro')) }}"
                 class="text-decoration-none text-muted">Inicio</a>
             <a href="{{ url_for('mis_reportes') }}" class="text-decoration-none text-muted">Mis Reportes</a>
-            <a href="#" class="text-decoration-none text-muted">Notificaciones</a>
+            <a href="{{ url_for('mis_notificaciones') }}" class="text-decoration-none text-muted">Notificaciones</a>
         </div>
         <div>
             <a href="{{ url_for('logout') }}" class="btn btn-outline-danger">Cerrar sesión</a>

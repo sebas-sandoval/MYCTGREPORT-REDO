@@ -290,7 +290,6 @@ def like_post(post_id):
     conn = create_connection()
     cursor = conn.cursor(dictionary=True)
 
-    # Verifica si ya le dio like
     cursor.execute("""
         SELECT * FROM MeGusta WHERE id_usuario = %s AND id_publicacion = %s
     """, (user_id, post_id))
@@ -301,11 +300,37 @@ def like_post(post_id):
     else:
         cursor.execute("INSERT INTO MeGusta (id_usuario, id_publicacion) VALUES (%s, %s)", (user_id, post_id))
 
+        # Obtener autor y nickname
+        cursor.execute("SELECT id_usuario FROM Publicaciones WHERE id_publicacion = %s", (post_id,))
+        autor = cursor.fetchone()
+
+        cursor.execute("SELECT nickname FROM Usuarios WHERE id_usuario = %s", (user_id,))
+        nick = cursor.fetchone()
+
+        if autor and nick and autor["id_usuario"] != user_id:
+            # Verificar preferencias
+            cursor.execute("""
+                SELECT not_reacciones FROM PreferenciasNotificaciones WHERE id_usuario = %s
+            """, (autor["id_usuario"],))
+            pref = cursor.fetchone()
+
+            if pref and pref["not_reacciones"]:
+                cursor.execute("""
+                    INSERT INTO Notificaciones (id_usuario, tipo_evento, id_referencia, mensaje)
+                    VALUES (%s, 'reaccion', %s, %s)
+                """, (
+                    autor["id_usuario"],
+                    post_id,
+                    f"{nick['nickname']} le dio like a tu publicación."
+                ))
+
     conn.commit()
     close_connection(conn)
 
     filtro = request.args.get("filtro", "")
     return redirect(url_for('dashboard', filtro=filtro))
+
+
 
 #Ruta para ingresar comentarios
 @app.route('/comentarios/<int:post_id>', methods=['GET', 'POST'])
@@ -313,23 +338,42 @@ def comentarios(post_id):
     user_id = session.get("user")
     if not user_id:
         return redirect(url_for("login"))
-    
-    filtro = request.form.get("filtro", "")
 
+    filtro = request.form.get("filtro", "")
     conn = create_connection()
     cursor = conn.cursor(dictionary=True)
 
-    # Procesa eñ comentario
     if request.method == "POST":
         comentario = request.form.get("comentario")
         if comentario:
-            # Inserta el comentario en la base de datos
             cursor.execute("""
                 INSERT INTO Comentarios (id_usuario, id_publicacion, contenido)
                 VALUES (%s, %s, %s)
             """, (user_id, post_id, comentario))
-            conn.commit()
 
+            cursor.execute("SELECT id_usuario FROM Publicaciones WHERE id_publicacion = %s", (post_id,))
+            autor = cursor.fetchone()
+
+            cursor.execute("SELECT nickname FROM Usuarios WHERE id_usuario = %s", (user_id,))
+            nick = cursor.fetchone()
+
+            if autor and nick and autor["id_usuario"] != user_id:
+                cursor.execute("""
+                    SELECT not_reacciones FROM PreferenciasNotificaciones WHERE id_usuario = %s
+                """, (autor["id_usuario"],))
+                pref = cursor.fetchone()
+
+                if pref and pref["not_reacciones"]:
+                    cursor.execute("""
+                        INSERT INTO Notificaciones (id_usuario, tipo_evento, id_referencia, mensaje)
+                        VALUES (%s, 'comentario', %s, %s)
+                    """, (
+                        autor["id_usuario"],
+                        post_id,
+                        f"{nick['nickname']} comentó en tu publicación."
+                    ))
+
+    conn.commit()
     close_connection(conn)
 
     return redirect(url_for('dashboard', filtro=filtro))
@@ -394,11 +438,7 @@ def toggle_seguir(id_seguido):
         return redirect(url_for('perfil_usuario', id_usuario=id_seguido))
 
     conn = create_connection()
-    if not conn:
-        flash("No se pudo conectar a la base de datos.", "danger")
-        return redirect(url_for('perfil_usuario', id_usuario=id_seguido))
-
-    cursor = conn.cursor()
+    cursor = conn.cursor(dictionary=True)
 
     cursor.execute("""
         SELECT 1 FROM Seguidores 
@@ -419,11 +459,30 @@ def toggle_seguir(id_seguido):
         """, (id_seguidor, id_seguido))
         flash("Ahora sigues a este usuario.", "success")
 
+        cursor.execute("SELECT nickname FROM Usuarios WHERE id_usuario = %s", (id_seguidor,))
+        nick = cursor.fetchone()
+
+        if nick:
+            cursor.execute("""
+                SELECT not_seguidos FROM PreferenciasNotificaciones WHERE id_usuario = %s
+            """, (id_seguido,))
+            pref = cursor.fetchone()
+
+            if pref and pref["not_seguidos"]:
+                cursor.execute("""
+                    INSERT INTO Notificaciones (id_usuario, tipo_evento, id_referencia, mensaje)
+                    VALUES (%s, 'seguido', %s, %s)
+                """, (
+                    id_seguido,
+                    id_seguidor,
+                    f"{nick['nickname']} comenzó a seguirte."
+                ))
+
     conn.commit()
-    cursor.close()
     close_connection(conn)
 
-    return redirect(url_for('perfil_usuario', id_usuario=id_seguido, filtro=filtro ))
+    return redirect(url_for('perfil_usuario', id_usuario=id_seguido, filtro=filtro))
+
 
 #Ruta para ver el perfil del usuario
 @app.route('/perfil/<int:id_usuario>')
@@ -505,18 +564,24 @@ def ajustes(seccion):
     conn = create_connection()
     cursor = conn.cursor(dictionary=True)
 
-    # Obtiene los datos del usuario
+    # Obtiene datos del usuario
     cursor.execute("SELECT * FROM Usuarios WHERE id_usuario = %s", (session['user'],))
     usuario = cursor.fetchone()
 
-    # Variables por defecto
+    # Variables comunes
     ultimo_inicio_sesion = None
     ip_inicio_sesion = None
     ultimo_cambio_contrasena = None
     ip_cambio_contrasena = None
     codigos = []
+    preferencias = {
+        'not_seguidos': True,
+        'not_reportes': True,
+        'not_reacciones': True,
+        'not_personalizadas': True
+    }
 
-    # Sección: INFORMACIÓN
+    # --- INFORMACIÓN ---
     if request.method == 'POST' and seccion == 'informacion':
         nombres = request.form['nombres']
         apellidos = request.form['apellidos']
@@ -548,9 +613,8 @@ def ajustes(seccion):
             unique_filename = f"{uuid.uuid4().hex}_{original_filename}"
             filepath = os.path.join(app.config['UPLOAD_FOLDER'], unique_filename)
 
-            foto_actual = usuario['foto_perfil']
-            if foto_actual != 'default.jpg':
-                foto_actual_path = os.path.join(app.config['UPLOAD_FOLDER'], foto_actual)
+            if usuario['foto_perfil'] != 'default.jpg':
+                foto_actual_path = os.path.join(app.config['UPLOAD_FOLDER'], usuario['foto_perfil'])
                 if os.path.exists(foto_actual_path):
                     os.remove(foto_actual_path)
 
@@ -568,11 +632,11 @@ def ajustes(seccion):
         conn.commit()
         flash('Información actualizada correctamente.', 'success')
 
-        # Recarga datos
+        # Recarga los datos actualizados
         cursor.execute("SELECT * FROM Usuarios WHERE id_usuario = %s", (session['user'],))
         usuario = cursor.fetchone()
 
-    # Sección: SEGURIDAD
+    # --- SEGURIDAD ---
     elif seccion == 'seguridad':
         cursor.execute("""
             SELECT tipo_evento, fecha_evento, ip_dispositivo
@@ -633,6 +697,7 @@ def ajustes(seccion):
                         """, (session['user'], request.remote_addr))
                         conn.commit()
                         flash('Contraseña actualizada correctamente.', 'success')
+
             elif accion == 'eliminar_cuenta':
                 contrasena_confirmacion = request.form['contrasena_confirmacion']
 
@@ -642,24 +707,21 @@ def ajustes(seccion):
                 if not resultado or resultado['contrasena'] != contrasena_confirmacion:
                     flash('La contraseña ingresada es incorrecta.', 'danger')
                 else:
-                    #Elimina la foto de perfil
-                    cursor.execute("SELECT foto_perfil FROM Usuarios WHERE id_usuario = %s", (session['user'],))
-                    perfil = cursor.fetchone()
-                    if perfil and perfil['foto_perfil'] and perfil['foto_perfil'] != 'default.jpg':
-                        ruta_foto_perfil = os.path.join(app.config['UPLOAD_FOLDER'], perfil['foto_perfil'])
-                        if os.path.exists(ruta_foto_perfil):
-                            os.remove(ruta_foto_perfil)
+                    # Elimina foto perfil
+                    if usuario['foto_perfil'] != 'default.jpg':
+                        ruta_foto = os.path.join(app.config['UPLOAD_FOLDER'], usuario['foto_perfil'])
+                        if os.path.exists(ruta_foto):
+                            os.remove(ruta_foto)
 
-                    #Elimina las fotos de publicaciones del usuario
+                    # Elimina fotos de publicaciones
                     cursor.execute("SELECT imagen FROM Publicaciones WHERE id_usuario = %s", (session['user'],))
-                    publicaciones = cursor.fetchall()
-                    for pub in publicaciones:
+                    for pub in cursor.fetchall():
                         if pub['imagen']:
-                            ruta_imagen = os.path.join(app.config['UPLOAD_FOLDER'], pub['imagen'])
-                            if os.path.exists(ruta_imagen):
-                                os.remove(ruta_imagen)
+                            ruta = os.path.join(app.config['UPLOAD_FOLDER'], pub['imagen'])
+                            if os.path.exists(ruta):
+                                os.remove(ruta)
 
-                    #Elimina los registros de la base de datos
+                    # Elimina registros relacionados
                     cursor.execute("DELETE FROM CodigosSeguridad WHERE id_usuario = %s", (session['user'],))
                     cursor.execute("DELETE FROM RegistroActividad WHERE id_usuario = %s", (session['user'],))
                     cursor.execute("DELETE FROM Comentarios WHERE id_usuario = %s", (session['user'],))
@@ -670,10 +732,39 @@ def ajustes(seccion):
                     session.clear()
                     flash('Tu cuenta ha sido eliminada permanentemente.', 'success')
                     return redirect(url_for('login'))
-            
 
+        # Obteniene los códigos actuales
         cursor.execute("SELECT codigo FROM CodigosSeguridad WHERE id_usuario = %s", (session['user'],))
         codigos = [row['codigo'] for row in cursor.fetchall()]
+
+    # --- NOTIFICACIONES ---
+    elif seccion == 'notificaciones':
+        if request.method == 'POST':
+            not_seguidos = 'seguido' in request.form
+            not_reportes = 'reporte' in request.form
+            not_reacciones = 'reaccion' in request.form
+            not_personalizadas = 'personalizada' in request.form
+
+            cursor.execute("""
+                INSERT INTO PreferenciasNotificaciones (id_usuario, not_seguidos, not_reportes, not_reacciones, not_personalizadas)
+                VALUES (%s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE
+                    not_seguidos = VALUES(not_seguidos),
+                    not_reportes = VALUES(not_reportes),
+                    not_reacciones = VALUES(not_reacciones),
+                    not_personalizadas = VALUES(not_personalizadas)
+            """, (session['user'], not_seguidos, not_reportes, not_reacciones, not_personalizadas))
+            conn.commit()
+            flash('Preferencias actualizadas correctamente.', 'success')
+
+        cursor.execute("""
+            SELECT not_seguidos, not_reportes, not_reacciones, not_personalizadas
+            FROM PreferenciasNotificaciones
+            WHERE id_usuario = %s
+        """, (session['user'],))
+        resultado = cursor.fetchone()
+        if resultado:
+            preferencias = resultado
 
     close_connection(conn)
 
@@ -685,9 +776,9 @@ def ajustes(seccion):
         ip_inicio_sesion=ip_inicio_sesion,
         ultimo_cambio_contrasena=ultimo_cambio_contrasena,
         ip_cambio_contrasena=ip_cambio_contrasena,
-        codigos=codigos
+        codigos=codigos,
+        preferencias=preferencias
     )
-
 
 #Ruta para historial de reportes
 @app.route('/mis_reportes')
@@ -709,6 +800,34 @@ def mis_reportes():
     close_connection(conn)
 
     return render_template('reports.html', reportes=reportes)
+
+#Ruta de las notificaciones
+@app.route('/mis_notificaciones')
+def mis_notificaciones():
+    user_id = session.get("user")
+    if not user_id:
+        flash("Debes iniciar sesión para ver tus notificaciones.", "warning")
+        return redirect(url_for("login"))
+
+    conn = create_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("""
+        SELECT id_notificacion, tipo_evento, mensaje, id_referencia, fecha_notificacion
+        FROM Notificaciones
+        WHERE id_usuario = %s
+        ORDER BY fecha_notificacion DESC
+    """, (user_id,))
+    
+    notificaciones = cursor.fetchall()
+
+    # Formatear fecha para evitar errores en Jinja
+    for notif in notificaciones:
+        notif["fecha_formateada"] = notif["fecha_notificacion"].strftime("%d/%m/%Y %H:%M")
+
+    close_connection(conn)
+
+    return render_template('notifications.html', notificaciones=notificaciones)
 
 
 if __name__ == '__main__':
