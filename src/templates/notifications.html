@@ -26,14 +26,30 @@
     <div class="top-nav d-flex justify-content-between align-items-center px-4">
         <div><strong>MyCTGReport</strong></div>
         <div class="d-flex gap-3">
-            <a href="{{ url_for('dashboard') }}" class="text-decoration-none text-muted">Inicio</a>
-            <a href="{{ url_for('mis_reportes') }}" class="text-decoration-none text-muted">Mis Reportes</a>
-            <a href="{{ url_for('mis_notificaciones') }}"
+            <a href="{{ url_for('dashboard', filtro=request.args.get('filtro')) }}"
+                class="text-decoration-none text-muted">Inicio</a>
+            <a href="{{ url_for('mis_reportes', filtro=request.args.get('filtro')) }}"
+                class="text-decoration-none text-muted">Mis Reportes</a>
+            <a href="{{ url_for('mis_notificaciones', filtro=request.args.get('filtro')) }}"
                 class="text-decoration-none text-dark fw-bold">Notificaciones</a>
         </div>
         <div>
             <a href="{{ url_for('logout') }}" class="btn btn-outline-danger">Cerrar sesión</a>
         </div>
+    </div>
+
+    <!-- Mensajes flash -->
+    <div class="container mt-3">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+            {{ message }}
+            <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+        </div>
+        {% endfor %}
+        {% endif %}
+        {% endwith %}
     </div>
 
     <!-- Contenido de notificaciones -->
@@ -43,10 +59,18 @@
                 <h5 class="card-title">Notificaciones</h5>
                 <ul class="list-group list-group-flush">
                     {% for notif in notificaciones %}
-                    <li class="list-group-item">
-                        {{ notif.mensaje }}
-                        <br>
-                        <small class="text-muted">{{ notif.fecha_formateada }}</small>
+                    <li class="list-group-item d-flex justify-content-between align-items-start">
+                        <div>
+                            {{ notif.mensaje }}<br>
+                            <small class="text-muted">{{ notif.fecha_formateada }}</small>
+                        </div>
+                        <form
+                            action="{{ url_for('eliminar_notificacion', id_notificacion=notif.id_notificacion , filtro=request.args.get('filtro') ) }}"
+                            method="POST" style="margin: 0;">
+                            <button type="submit" class="btn btn-sm btn-danger ms-2" title="Eliminar notificación">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </form>
                     </li>
                     {% else %}
                     <li class="list-group-item text-muted">No tienes notificaciones.</li>

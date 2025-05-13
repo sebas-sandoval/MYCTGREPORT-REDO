@@ -30,10 +30,13 @@
     <div class="top-nav d-flex justify-content-between align-items-center px-4">
         <div><strong>MyCTGReport</strong></div>
         <div class="d-flex gap-3">
-            <a href="{{ url_for('dashboard') }}" class="text-decoration-none text-muted">Inicio</a>
-            <a href="{{ url_for('mis_reportes') }}" class="text-decoration-none text-muted text-dark fw-bold">Mis
+            <a href="{{ url_for('dashboard' , filtro=request.args.get('filtro') )}}"
+                class="text-decoration-none text-muted">Inicio</a>
+            <a href="{{ url_for('mis_reportes' , filtro=request.args.get('filtro')) }}"
+                class="text-decoration-none text-muted text-dark fw-bold">Mis
                 Reportes</a>
-            <a href="{{ url_for('mis_notificaciones') }}" class="text-decoration-none text-muted">Notificaciones</a>
+            <a href="{{ url_for('mis_notificaciones' , filtro=request.args.get('filtro')) }}"
+                class="text-decoration-none text-muted">Notificaciones</a>
         </div>
         <div>
             <a href="{{ url_for('logout') }}" class="btn btn-outline-danger">Cerrar sesión</a>

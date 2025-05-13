@@ -66,8 +66,10 @@
         <div class="d-flex gap-3">
             <a href="{{ url_for('dashboard' , filtro=request.args.get('filtro')) }}"
                 class="text-decoration-none text-dark fw-bold">Inicio</a>
-            <a href="{{ url_for('mis_reportes') }}" class="text-decoration-none text-muted">Mis Reportes</a>
-            <a href="{{ url_for('mis_notificaciones') }}" class="text-decoration-none text-muted">Notificaciones</a>
+            <a href="{{ url_for('mis_reportes' , filtro=request.args.get('filtro')) }}"
+                class="text-decoration-none text-muted">Mis Reportes</a>
+            <a href="{{ url_for('mis_notificaciones' , filtro=request.args.get('filtro')) }}"
+                class="text-decoration-none text-muted">Notificaciones</a>
         </div>
         <div>
             <a href="{{ url_for('logout') }}" class="btn btn-outline-danger">Cerrar sesión</a>
@@ -88,8 +90,7 @@
                         <li><a href="{{ url_for('perfil_usuario', id_usuario=user.id_usuario, filtro=request.args.get('filtro')) }}"
                                 class="text-decoration-none">Mi Perfil</a>
                         </li>
-                        <li><a href="#" class="text-decoration-none">Guardados</a></li>
-                        <li><a href="{{ url_for('ajustes', seccion='informacion') }}"
+                        <li><a href="{{ url_for('ajustes', seccion='informacion' , filtro=request.args.get('filtro')) }}"
                                 class="text-decoration-none">Ajustes</a></li>
                     </ul>
                 </div>
@@ -383,9 +384,13 @@
                 <div class="trend-box">
                     <h6 class="header-text">Tendencias</h6>
                     <ul class="list-unstyled">
-                        <li>#ejemplo1</li>
-                        <li>#ejemplo2</li>
-                        <li>#ejemplo3</li>
+                        {% if tendencias %}
+                        {% for tendencia in tendencias %}
+                        <li>{{ tendencia.descripcion[:20] }} ({{ tendencia.total_megusta }} ❤️)</li>
+                        {% endfor %}
+                        {% else %}
+                        <li>No hay tendencias aún.</li>
+                        {% endif %}
                     </ul>
                 </div>
             </div>

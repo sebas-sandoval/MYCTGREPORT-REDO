@@ -87,11 +87,11 @@ def registro():
             for fields, (value, min_length, error_message) in fields.items():
                 if len(value) < min_length:
                     flash(error_message)
-                    return redirect(url_for("register"))
+                    return redirect(url_for("registro"))
                 
             if not re.match(r'^[0-9]{10}$', telefono):
                 flash("El número de celular debe tener solo 10 dígitos.")
-                return redirect(url_for("register"))
+                return redirect(url_for("registro"))
             
             conn = create_connection()
             cursor = conn.cursor()
@@ -102,7 +102,7 @@ def registro():
 
             if user_by_email:
                 flash("el correo electrouco ya existe")
-                return redirect(url_for("register"))
+                return redirect(url_for("registro"))
             else:
                 # comprueba si nickname ya existe
                 cursor.execute("SELECT * FROM usuarios WHERE nickname = %s", (nickname,))
@@ -110,7 +110,7 @@ def registro():
 
             if user_by_nickname:
                 flash("el nickname ya existe")
-                return redirect(url_for("register"))
+                return redirect(url_for("registro"))
             
             #guarda el usuario en la base de datos
             cursor.execute("INSERT INTO usuarios (nombre, apellido, nickname, correo, contrasena, telefono, residencia) VALUES (%s, %s, %s, %s, %s, %s, %s)", (nombre, apellido, nickname, correo, contraseña, telefono, residencia))
@@ -119,12 +119,55 @@ def registro():
             return redirect(url_for("login"))
         else:
             flash("Por favor, completa todos los campos")
-            return redirect(url_for("register"))
+            return redirect(url_for("registro"))
     return render_template("register.html")
 
 #Ruta para recuperar contraseña
-@app.route("/olvido_contraseña", methods=["GET", "POST"])
+@app.route('/olvide-contrasena', methods=['GET', 'POST'])
 def olvido():
+    if request.method == 'POST':
+        correo = request.form['correo']
+        codigo = request.form['codigo']
+        nueva_contra = request.form['nueva_contrasena']
+
+        conn = create_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        # Validar correo
+        cursor.execute("SELECT id_usuario FROM Usuarios WHERE correo = %s", (correo,))
+        usuario = cursor.fetchone()
+
+        if usuario:
+            id_usuario = usuario['id_usuario']
+
+            # Validar código
+            cursor.execute("""
+                SELECT * FROM CodigosSeguridad 
+                WHERE id_usuario = %s AND codigo = %s AND usado = FALSE AND (expiracion IS NULL OR expiracion > NOW())
+            """, (id_usuario, codigo))
+            codigo_valido = cursor.fetchone()
+
+            if codigo_valido:
+                # Actualizar la contraseña sin hash
+                cursor.execute("""
+                    UPDATE Usuarios SET contrasena = %s WHERE id_usuario = %s
+                """, (nueva_contra, id_usuario))
+
+                # Eliminar el código
+                cursor.execute("DELETE FROM CodigosSeguridad WHERE id_codigo = %s", (codigo_valido['id_codigo'],))
+
+                conn.commit()
+                flash("Contraseña actualizada correctamente. Inicia sesión.", "success")
+                close_connection(conn)
+                return redirect(url_for('login'))
+
+            else:
+                flash("Código inválido o vencido.", "danger")
+        else:
+            flash("Correo no registrado.", "danger")
+
+        close_connection(conn)
+
     return render_template("forgot_password.html")
 
 @app.route("/dashboard", methods=["GET", "POST"])
@@ -140,16 +183,15 @@ def dashboard():
     cursor.execute("SELECT * FROM usuarios WHERE id_usuario = %s", (user_id,))
     user = cursor.fetchone()
 
-    
+    # Filtro para ordenar publicaciones
     filtro = request.args.get("filtro")
-
-    orden = "p.fecha_publicacion DESC" 
+    orden = "p.fecha_publicacion DESC"
     if filtro == "populares":
         orden = "total_likes DESC"
     elif filtro == "comentados":
         orden = "total_comentarios DESC"
 
-    # Obtiene las publicaciones
+    # Obtiene las publicaciones con conteo de likes y comentarios
     query = f"""
         SELECT p.*, u.nickname, u.foto_perfil,
             (SELECT COUNT(*) FROM MeGusta WHERE id_publicacion = p.id_publicacion) AS total_likes,
@@ -165,7 +207,7 @@ def dashboard():
     cursor.execute(query, (user_id,))
     publicaciones = cursor.fetchall()
 
-    #Agrega los comentarios a cada publicación
+    # Agrega los comentarios a cada publicación
     for pub in publicaciones:
         cursor.execute("""
             SELECT c.*, u.nickname 
@@ -176,9 +218,20 @@ def dashboard():
         """, (pub["id_publicacion"],))
         pub["comentarios"] = cursor.fetchall()
 
+    # Obtiene las 4 publicaciones más likeadas (tendencias)
+    cursor.execute("""
+        SELECT p.id_publicacion, p.descripcion, COUNT(m.id_megusta) AS total_megusta
+        FROM Publicaciones p
+        LEFT JOIN MeGusta m ON p.id_publicacion = m.id_publicacion
+        GROUP BY p.id_publicacion
+        ORDER BY total_megusta DESC
+        LIMIT 4
+    """)
+    tendencias = cursor.fetchall()
+
     close_connection(conn)
 
-    return render_template("dashboard.html", user=user, publicaciones=publicaciones)
+    return render_template("dashboard.html", user=user, publicaciones=publicaciones, tendencias=tendencias)
 
 # Ruta para subir reportes
 @app.route("/reportes", methods=["GET", "POST"])
@@ -560,7 +613,8 @@ def perfil_usuario(id_usuario):
 def ajustes(seccion):
     if 'user' not in session:
         return redirect(url_for('login'))
-
+    
+    filtro = request.args.get("filtro")
     conn = create_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -777,7 +831,8 @@ def ajustes(seccion):
         ultimo_cambio_contrasena=ultimo_cambio_contrasena,
         ip_cambio_contrasena=ip_cambio_contrasena,
         codigos=codigos,
-        preferencias=preferencias
+        preferencias=preferencias,
+        filtro=filtro
     )
 
 #Ruta para historial de reportes
@@ -785,7 +840,8 @@ def ajustes(seccion):
 def mis_reportes():
     if 'user' not in session:
         return redirect(url_for('login'))
-
+    
+    filtro = request.args.get("filtro")
     conn = create_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -799,7 +855,7 @@ def mis_reportes():
     reportes = cursor.fetchall()
     close_connection(conn)
 
-    return render_template('reports.html', reportes=reportes)
+    return render_template('reports.html', reportes=reportes, filtro=filtro)
 
 #Ruta de las notificaciones
 @app.route('/mis_notificaciones')
@@ -809,6 +865,7 @@ def mis_notificaciones():
         flash("Debes iniciar sesión para ver tus notificaciones.", "warning")
         return redirect(url_for("login"))
 
+    filtro = request.args.get("filtro")
     conn = create_connection()
     cursor = conn.cursor(dictionary=True)
 
@@ -827,7 +884,29 @@ def mis_notificaciones():
 
     close_connection(conn)
 
-    return render_template('notifications.html', notificaciones=notificaciones)
+    return render_template('notifications.html', notificaciones=notificaciones , filtro=filtro)
+
+@app.route('/eliminar_notificacion/<int:id_notificacion>', methods=['POST'])
+def eliminar_notificacion(id_notificacion):
+    user_id = session.get("user")
+    if not user_id:
+        flash("Debes iniciar sesión.", "warning")
+        return redirect(url_for("login"))
+
+    filtro = request.args.get("filtro")
+    conn = create_connection()
+    cursor = conn.cursor()
+    
+    # Elimina la notificación solo si pertenece al usuario
+    cursor.execute("""
+        DELETE FROM Notificaciones
+        WHERE id_notificacion = %s AND id_usuario = %s
+    """, (id_notificacion, user_id))
+    conn.commit()
+    close_connection(conn)
+
+    flash("Notificación eliminada correctamente.", "success")
+    return redirect(url_for("mis_notificaciones" , filtro=filtro))
 
 
 if __name__ == '__main__':
