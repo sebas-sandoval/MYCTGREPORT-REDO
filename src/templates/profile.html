@@ -49,8 +49,14 @@
             <div class="p-4 bg-white border rounded text-center" style="width: 300px;">
                 <img src="{{ url_for('static', filename='imgs/' ~ usuario_perfil.foto_perfil) }}"
                     class="rounded-circle mb-2" alt="Avatar" width="100" height="100">
-                <h4 class="mt-2">{{ usuario_perfil.nombre }} {{ usuario_perfil.apellido }}</h4>
-                <p class="text-muted">@{{ usuario_perfil.nickname }}</p>
+                <h4 class="mt-2 text-truncate"
+                    style="max-width: 100%; overflow-wrap: break-word; word-break: break-word;">
+                    {{ usuario_perfil.nombre }} {{ usuario_perfil.apellido }}
+                </h4>
+                <p class="text-muted text-truncate" style="max-width: 100%; overflow-wrap: break-word;">
+                    @{{ usuario_perfil.nickname }}
+                </p>
+
 
                 {% if session['user'] != usuario_perfil.id_usuario %}
                 <form method="POST" action="{{ url_for('toggle_seguir', id_seguido=usuario_perfil.id_usuario, filtro=request.args.get('filtro')) }}

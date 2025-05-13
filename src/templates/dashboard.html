@@ -56,7 +56,81 @@
             object-fit: contain;
             background-color: #f8f9fa;
         }
+
+        .descripcion-post {
+            word-break: break-word;
+            overflow-wrap: break-word;
+            white-space: pre-wrap;
+        }
+
+        .break-word {
+            word-break: break-word;
+            overflow-wrap: break-word;
+        }
+
+        .comentario-post {
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+            white-space: pre-wrap;
+        }
     </style>
+
+    <script>
+        document.addEventListener("DOMContentLoaded", function () {
+            const manejarTexto = (selector, maxLength = 200) => {
+                const elementos = document.querySelectorAll(selector);
+
+                elementos.forEach(elem => {
+                    const fullText = elem.getAttribute("data-fulltext");
+                    if (!fullText || fullText.length <= maxLength) {
+                        elem.textContent = fullText;
+                        return;
+                    }
+
+                    const preview = fullText.substring(0, maxLength) + "... ";
+                    const verMas = document.createElement("a");
+                    verMas.href = "#";
+                    verMas.textContent = "Ver más";
+                    verMas.style.color = "#007bff";
+                    verMas.style.cursor = "pointer";
+
+                    const verMenos = document.createElement("a");
+                    verMenos.href = "#";
+                    verMenos.textContent = " Ver menos";
+                    verMenos.style.color = "#007bff";
+                    verMenos.style.cursor = "pointer";
+                    verMenos.style.display = "none";
+
+                    const textoCompleto = document.createElement("span");
+                    textoCompleto.textContent = fullText.substring(maxLength);
+                    textoCompleto.style.display = "none";
+
+                    verMas.addEventListener("click", function (e) {
+                        e.preventDefault();
+                        textoCompleto.style.display = "inline";
+                        verMas.style.display = "none";
+                        verMenos.style.display = "inline";
+                    });
+
+                    verMenos.addEventListener("click", function (e) {
+                        e.preventDefault();
+                        textoCompleto.style.display = "none";
+                        verMas.style.display = "inline";
+                        verMenos.style.display = "none";
+                    });
+
+                    elem.textContent = preview;
+                    elem.appendChild(textoCompleto);
+                    elem.appendChild(verMas);
+                    elem.appendChild(verMenos);
+                });
+            };
+
+            manejarTexto(".descripcion-post", 200); // Para publicaciones
+            manejarTexto(".comentario-post", 150);  // Para comentarios
+        });
+    </script>
+
 </head>
 
 <body>
@@ -83,8 +157,12 @@
                     <img src="{{ url_for('static', filename='imgs/' + user.foto_perfil) }}" class="profile-img mb-2"
                         alt="avatar" style="width: 80px; height: 80px; object-fit: cover; border-radius: 50%;">
 
-                    <p class="mb-2"><strong>{{ user.nombre }} {{ user.apellido }}</strong><br>
-                        <small>@{{ user.nickname }}</small>
+                    <p class="mb-2 text-truncate"
+                        style="max-width: 100%; overflow-wrap: break-word; word-break: break-word;">
+                        <strong class="d-block text-truncate" style="max-width: 100%;">{{ user.nombre }} {{
+                            user.apellido }}</strong>
+                        <small class="d-block text-muted text-truncate" style="max-width: 100%;">@{{ user.nickname
+                            }}</small>
                     </p>
                     <ul class="list-unstyled mb-0">
                         <li><a href="{{ url_for('perfil_usuario', id_usuario=user.id_usuario, filtro=request.args.get('filtro')) }}"
@@ -108,13 +186,13 @@
                             <img src="{{ url_for('static', filename='imgs/' + user.foto_perfil) }}"
                                 class="profile-img me-2" alt="avatar">
                             <textarea name="texto" class="form-control" placeholder="¿Qué está pasando en tu ciudad?"
-                                rows="2" required></textarea>
+                                rows="2" required minlength="10" maxlength="500"></textarea>
                         </div>
                         <div class="d-flex justify-content-between align-items-center">
                             <div class="d-flex gap-2 w-100">
                                 <input type="file" name="imagen" accept="image/*" class="form-control" required>
                                 <input type="text" name="ubicacion" class="form-control" placeholder="Ubicación"
-                                    required>
+                                    required maxlength="100" minlength="3">
                             </div>
                             <button type="submit" class="btn btn-dark ms-2">Publicar</button>
                         </div>
@@ -202,13 +280,15 @@
                                             <label for="descripcion{{ post.id_publicacion }}"
                                                 class="form-label">Descripción</label>
                                             <textarea name="descripcion" id="descripcion{{ post.id_publicacion }}"
-                                                class="form-control" required>{{ post.descripcion }}</textarea>
+                                                class="form-control" required minlength="10"
+                                                maxlength="500">{{ post.descripcion }}</textarea>
                                         </div>
                                         <div class="mb-3">
                                             <label for="ubicacion{{ post.id_publicacion }}"
                                                 class="form-label">Ubicación</label>
                                             <input type="text" name="ubicacion" id="ubicacion{{ post.id_publicacion }}"
-                                                value="{{ post.ubicacion }}" class="form-control" required>
+                                                value="{{ post.ubicacion }}" class="form-control" required minlength="3"
+                                                maxlength="100">
                                         </div>
                                     </div>
                                     <div class="modal-footer">
@@ -259,13 +339,17 @@
                                 <br>
                                 <small class="text-muted">{{ post.fecha_publicacion.strftime('%d/%m/%Y %H:%M')
                                     }}</small><br>
-                                <small><i class="bi bi-geo-alt text-danger"></i> {{ post.ubicacion }}</small>
+                                <small style="display: flex; align-items: center; word-break: break-word;">
+                                    <i class="bi-geo-alt text-danger me-1"></i>
+                                    <span style="word-break: break-word;">{{ post.ubicacion }}</span>
+                                </small>
+
                             </div>
                         </div>
                     </div>
 
                     <!-- Descripción -->
-                    <p>{{ post.descripcion }}</p>
+                    <p class="descripcion-post" data-fulltext="{{ post.descripcion }}"></p>
 
                     <!-- Imagen -->
                     {% if post.imagen %}
@@ -335,11 +419,14 @@
                                                         <i class="bi bi-trash"></i>
                                                     </button>
                                                 </form>
-
                                             </div>
                                             {% endif %}
                                         </div>
-                                        <p class="mt-2">{{ comentario.contenido }}</p>
+
+                                        <!-- Texto del comentario-->
+                                        <p class="comentario-post mt-2" data-fulltext="{{ comentario.contenido }}"
+                                            style="word-wrap: break-word; overflow-wrap: break-word; white-space: pre-wrap;">
+                                        </p>
 
                                         <!-- Formulario para editar comentario -->
                                         {% if comentario.id_usuario == session['user'] %}
@@ -348,12 +435,11 @@
                                                 action="{{ url_for('editar_comentario', comentario_id=comentario.id_comentario) }}">
                                                 <input type="hidden" name="filtro"
                                                     value="{{ request.args.get('filtro', '') }}">
-                                                <textarea name="comentario" class="form-control"
+                                                <textarea name="comentario" class="form-control" maxlength="300"
                                                     required>{{ comentario.contenido }}</textarea>
                                                 <button type="submit" class="btn btn-primary btn-sm mt-2">Guardar
                                                     cambios</button>
                                             </form>
-
                                         </div>
                                         {% endif %}
                                     </div>
@@ -366,13 +452,14 @@
                                 <form method="POST" action="{{ url_for('comentarios', post_id=post.id_publicacion) }}">
                                     <input type="hidden" name="filtro" value="{{ request.args.get('filtro', '') }}">
                                     <textarea name="comentario" class="form-control"
-                                        placeholder="Escribe tu comentario..." required></textarea>
+                                        placeholder="Escribe tu comentario..." maxlength="300" required></textarea>
                                     <button type="submit" class="btn btn-primary mt-2">Agregar comentario</button>
                                 </form>
                             </div>
                         </div>
                     </div>
                 </div>
+
 
                 {% endfor %}
 

@@ -42,6 +42,7 @@ def login():
         if user:
             # Guarda la sesión
             session["user"] = user["id_usuario"]
+            session["tipo_usuario"] = user["tipo_usuario"]  # Guarda el tipo de usuario en la sesión
 
             # Registra el inicio de sesión
             ip = request.remote_addr
@@ -52,12 +53,20 @@ def login():
             conn.commit()
 
             close_connection(conn)
-            return redirect(url_for("dashboard"))
+
+            # Redirige según el tipo de usuario
+            if user["tipo_usuario"] == "admin":
+                return redirect(url_for("admin"))  # Redirige al panel de administración
+            else:
+                return redirect(url_for("dashboard"))  # Redirige al dashboard normal
+
         else:
             close_connection(conn)
             flash("Correo o contraseña incorrectos", "error")
             return render_template("login.html")
     return render_template("login.html")
+
+# Ruta para cerrar sesión
 @app.route("/logout")
 def logout():
     session.pop("user", None)
@@ -75,8 +84,9 @@ def registro():
         telefono = request.form["telefono"]
         residencia = request.form["residencia"]
 
-        #valida los datos
+        # Validar que todos los campos estén llenos
         if nombre and apellido and nickname and correo and contraseña and telefono and residencia:
+            # Validar longitud mínima
             fields = {
                 "nombre": (nombre, 3, "El nombre debe tener al menos 3 caracteres."),
                 "apellido": (apellido, 3, "El apellido debe tener al menos 3 caracteres."),
@@ -84,42 +94,61 @@ def registro():
                 "contraseña": (contraseña, 8, "La contraseña debe tener al menos 8 caracteres.")
             }
 
-            for fields, (value, min_length, error_message) in fields.items():
-                if len(value) < min_length:
+            for field_name, (value, min_length, error_message) in fields.items():
+                if len(value.strip()) < min_length:
                     flash(error_message)
                     return redirect(url_for("registro"))
-                
-            if not re.match(r'^[0-9]{10}$', telefono):
-                flash("El número de celular debe tener solo 10 dígitos.")
+
+            # Validar teléfono: solo 10 dígitos
+            if not re.match(r'^\d{10}$', telefono):
+                flash("El número de celular debe tener exactamente 10 dígitos.")
                 return redirect(url_for("registro"))
-            
+
+            # Validar formato básico del correo
+            if not re.match(r"[^@]+@[^@]+\.[^@]+", correo):
+                flash("Por favor ingresa un correo electrónico válido.")
+                return redirect(url_for("registro"))
+
+            # Validar dominio permitido del correo
+            dominios_permitidos = [
+                "gmail.com", "outlook.com", "hotmail.com",
+                "yahoo.com", "icloud.com", "protonmail.com"
+            ]
+            dominio = correo.split("@")[-1].lower()
+            if dominio not in dominios_permitidos:
+                flash("Solo se permiten correos de dominios conocidos como Gmail, Outlook, etc.")
+                return redirect(url_for("registro"))
+
+            # Conexión a la base de datos
             conn = create_connection()
             cursor = conn.cursor()
 
-            # Comprueba si el correo ya existe
-            cursor.execute("SELECT * FROM usuarios WHERE correo= %s" , (correo,))
-            user_by_email = cursor.fetchone()
-
-            if user_by_email:
-                flash("el correo electrouco ya existe")
+            # Verificar si ya existe el correo
+            cursor.execute("SELECT * FROM Usuarios WHERE correo = %s", (correo,))
+            if cursor.fetchone():
+                flash("El correo electrónico ya está registrado.")
                 return redirect(url_for("registro"))
-            else:
-                # comprueba si nickname ya existe
-                cursor.execute("SELECT * FROM usuarios WHERE nickname = %s", (nickname,))
-                user_by_nickname = cursor.fetchone()
 
-            if user_by_nickname:
-                flash("el nickname ya existe")
+            # Verificar si ya existe el nickname
+            cursor.execute("SELECT * FROM Usuarios WHERE nickname = %s", (nickname,))
+            if cursor.fetchone():
+                flash("El nickname ya está en uso.")
                 return redirect(url_for("registro"))
-            
-            #guarda el usuario en la base de datos
-            cursor.execute("INSERT INTO usuarios (nombre, apellido, nickname, correo, contrasena, telefono, residencia) VALUES (%s, %s, %s, %s, %s, %s, %s)", (nombre, apellido, nickname, correo, contraseña, telefono, residencia))
+
+            # Insertar nuevo usuario (sin hash)
+            cursor.execute("""
+                INSERT INTO Usuarios (nombre, apellido, nickname, correo, contrasena, telefono, residencia)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (nombre, apellido, nickname, correo, contraseña, telefono, residencia))
             conn.commit()
-            flash("Usuario registrado con éxito")
+            conn.close()
+
+            flash("Usuario registrado con éxito.")
             return redirect(url_for("login"))
         else:
-            flash("Por favor, completa todos los campos")
+            flash("Por favor, completa todos los campos.")
             return redirect(url_for("registro"))
+
     return render_template("register.html")
 
 #Ruta para recuperar contraseña
@@ -281,6 +310,11 @@ def editar_publicacion(post_id):
     ubicacion = request.form['ubicacion']
     filtro = request.form.get("filtro", "")
 
+    # Validar la longitud antes de continuar
+    if len(ubicacion) > 100:
+        flash("La ubicación no puede tener más de 100 caracteres.", "warning")
+        return redirect(url_for("dashboard", filtro=filtro))
+
     conn = create_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT id_usuario FROM Publicaciones WHERE id_publicacion = %s", (post_id,))
@@ -300,6 +334,7 @@ def editar_publicacion(post_id):
 
     flash("Publicación actualizada correctamente.", "success")
     return redirect(url_for("dashboard", filtro=filtro))
+
 
 # Ruta para eliminar reportes
 @app.route('/eliminar/<int:post_id>', methods=['POST'])
@@ -331,7 +366,6 @@ def eliminar_publicacion(post_id):
 
     flash("Publicación eliminada correctamente.", "success")
     return redirect(url_for("dashboard" , filtro=filtro))
-
 
 # Ruta de los likes
 @app.route('/like/<int:post_id>', methods=['POST'])
@@ -908,6 +942,104 @@ def eliminar_notificacion(id_notificacion):
     flash("Notificación eliminada correctamente.", "success")
     return redirect(url_for("mis_notificaciones" , filtro=filtro))
 
+# Ruta para el dashboard del admin
+@app.route('/admin/dashboard')
+def admin():
+    if 'user' not in session or session.get('tipo_usuario') != 'admin':
+        return redirect(url_for('login'))
+
+    conn = create_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    # Trae las publicaciones, los comentarios y los likes
+    cursor.execute("""
+        SELECT p.*, u.nickname 
+        FROM Publicaciones p
+        JOIN Usuarios u ON p.id_usuario = u.id_usuario
+        ORDER BY p.fecha_publicacion DESC
+    """)
+    publicaciones = cursor.fetchall()
+
+    for publicacion in publicaciones:
+        # Trae los likes para la publicación
+        cursor.execute("""
+            SELECT COUNT(*) AS likes_count
+            FROM MeGusta
+            WHERE id_publicacion = %s
+        """, (publicacion["id_publicacion"],))
+        publicacion["likes_count"] = cursor.fetchone()["likes_count"]
+
+        # Trae los comentarios para la publicación
+        cursor.execute("""
+            SELECT c.*, u.nickname
+            FROM Comentarios c
+            JOIN Usuarios u ON c.id_usuario = u.id_usuario
+            WHERE c.id_publicacion = %s
+            ORDER BY c.fecha_comentario DESC
+        """, (publicacion["id_publicacion"],))
+        publicacion["comentarios"] = cursor.fetchall()
+
+    close_connection(conn)
+    return render_template('admin.html', publicaciones=publicaciones)
+
+# Ruta para cambiar el estado de una publicación
+@app.route('/admin/cambiar_estado/<int:id_publicacion>', methods=['POST'])
+def cambiar_estado(id_publicacion):
+    if 'user' not in session or session.get('tipo_usuario') != 'admin':
+        return redirect(url_for('login'))
+
+    nuevo_estado = request.form.get('estado')
+
+    conn = create_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    cursor.execute("UPDATE Publicaciones SET estado = %s WHERE id_publicacion = %s", (nuevo_estado, id_publicacion))
+
+    cursor.execute("SELECT id_usuario FROM Publicaciones WHERE id_publicacion = %s", (id_publicacion,))
+    publicacion = cursor.fetchone()
+
+    if publicacion:
+        id_autor = publicacion['id_usuario']
+        cursor.execute("SELECT not_reportes FROM PreferenciasNotificaciones WHERE id_usuario = %s", (id_autor,))
+        preferencias = cursor.fetchone()
+
+        if preferencias and preferencias['not_reportes']:
+            mensaje = f"El estado de tu reporte fue actualizado a '{nuevo_estado}'."
+            cursor.execute("""
+                INSERT INTO Notificaciones (id_usuario, tipo_evento, id_referencia, mensaje)
+                VALUES (%s, 'reporte', %s, %s)
+            """, (id_autor, id_publicacion, mensaje))
+
+    conn.commit()
+    close_connection(conn)
+    return redirect(url_for('admin'))
+
+# Ruta para eliminar una publicación por el admin
+@app.route('/admin/eliminar/<int:id_publicacion>', methods=['POST'])
+def eliminar(id_publicacion):
+    if 'user' not in session or session.get('tipo_usuario') != 'admin':
+        return redirect(url_for('login'))
+
+    conn = create_connection()
+    cursor = conn.cursor(dictionary=True)
+
+    # Obteniene el nombre del archivo de imagen asociado a la publicación
+    cursor.execute("SELECT imagen FROM Publicaciones WHERE id_publicacion = %s", (id_publicacion,))
+    publicacion = cursor.fetchone()
+
+    # Si existe una imagen, la eliminala del servidor
+    if publicacion and publicacion["imagen"]:
+        ruta_imagen = os.path.join(app.config['UPLOAD_FOLDER'], publicacion["imagen"])
+        if os.path.exists(ruta_imagen):
+            os.remove(ruta_imagen)
+
+    # Elimina la publicación
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM Publicaciones WHERE id_publicacion = %s", (id_publicacion,))
+    conn.commit()
+
+    close_connection(conn)
+    return redirect(url_for('admin'))
 
 if __name__ == '__main__':
     app.run(debug=True)

@@ -101,17 +101,17 @@
                     <div class="col-md-4">
                         <label for="nombres" class="form-label">Nombres</label>
                         <input type="text" class="form-control" id="nombres" name="nombres"
-                            value="{{ usuario['nombre'] }}">
+                            value="{{ usuario['nombre'] }}" maxlength="50" required>
                     </div>
                     <div class="col-md-4">
                         <label for="apellidos" class="form-label">Apellidos</label>
                         <input type="text" class="form-control" id="apellidos" name="apellidos"
-                            value="{{ usuario['apellido'] }}">
+                            value="{{ usuario['apellido'] }}" maxlength="50" required>
                     </div>
                     <div class="col-md-4">
                         <label for="nickname" class="form-label">Nickname</label>
                         <input type="text" class="form-control" id="nickname" name="nickname"
-                            value="{{ usuario['nickname'] }}">
+                            value="{{ usuario['nickname'] }}" maxlength="20" required>
                     </div>
                 </div>
 
@@ -119,17 +119,17 @@
                     <div class="col-md-4">
                         <label for="correo" class="form-label">Correo</label>
                         <input type="email" class="form-control" id="correo" name="correo"
-                            value="{{ usuario['correo'] }}">
+                            value="{{ usuario['correo'] }}" maxlength="100" required>
                     </div>
                     <div class="col-md-4">
                         <label for="telefono" class="form-label">Teléfono</label>
                         <input type="text" class="form-control" id="telefono" name="telefono"
-                            value="{{ usuario['telefono'] }}">
+                            value="{{ usuario['telefono'] }}" maxlength="15" required>
                     </div>
                     <div class="col-md-4">
                         <label for="residencia" class="form-label">Lugar de residencia</label>
                         <input type="text" class="form-control" id="residencia" name="residencia"
-                            value="{{ usuario['residencia'] }}">
+                            value="{{ usuario['residencia'] }}" maxlength="100" required>
                     </div>
                 </div>
 
@@ -266,16 +266,19 @@
                             <div class="modal-body">
                                 <div class="mb-3">
                                     <label for="contrasena_actual" class="form-label">Contraseña actual</label>
-                                    <input type="password" class="form-control" name="contrasena_actual" required>
+                                    <input type="password" class="form-control" name="contrasena_actual" required
+                                        maxlength="64">
                                 </div>
                                 <div class="mb-3">
                                     <label for="nueva_contrasena" class="form-label">Nueva contraseña</label>
-                                    <input type="password" class="form-control" name="nueva_contrasena" required>
+                                    <input type="password" class="form-control" name="nueva_contrasena" required
+                                        minlength="8" maxlength="64">
                                 </div>
                                 <div class="mb-3">
                                     <label for="confirmar_contrasena" class="form-label">Confirmar nueva
                                         contraseña</label>
-                                    <input type="password" class="form-control" name="confirmar_contrasena" required>
+                                    <input type="password" class="form-control" name="confirmar_contrasena" required
+                                        minlength="8" maxlength="64">
                                 </div>
                             </div>
                             <div class="modal-footer">
@@ -304,7 +307,8 @@
                                 <div class="mb-3">
                                     <label for="contrasena_confirmacion" class="form-label">Confirma tu
                                         contraseña:</label>
-                                    <input type="password" class="form-control" name="contrasena_confirmacion" required>
+                                    <input type="password" class="form-control" name="contrasena_confirmacion" required
+                                        maxlength="64">
                                 </div>
                             </div>
                             <div class="modal-footer">
@@ -317,6 +321,7 @@
                     </form>
                 </div>
             </div>
+
 
             {% elif seccion_activa == 'notificaciones' %}
             <div class="container mt-4">

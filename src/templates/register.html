@@ -49,25 +49,28 @@
         <h5 class="mb-4">Crear tu cuenta</h5>
         <form method="POST" action="{{ url_for('registro') }}">
             <div class="mb-3">
-                <input type="text" class="form-control" name="nombre" placeholder="Nombre">
+                <input type="text" class="form-control" name="nombre" placeholder="Nombre" maxlength="50" required>
             </div>
             <div class="mb-3">
-                <input type="text" class="form-control" name="apellido" placeholder="Apellido">
+                <input type="text" class="form-control" name="apellido" placeholder="Apellido" maxlength="50" required>
             </div>
             <div class="mb-3">
-                <input type="text" class="form-control" name="nickname" placeholder="Nickname">
+                <input type="text" class="form-control" name="nickname" placeholder="Nickname" maxlength="30" required>
             </div>
             <div class="mb-3">
-                <input type="email" class="form-control" name="correo" placeholder="Correo">
+                <input type="email" class="form-control" name="correo" placeholder="Correo" maxlength="100" required>
             </div>
             <div class="mb-3">
-                <input type="password" class="form-control" name="contraseña" placeholder="Contraseña">
+                <input type="password" class="form-control" name="contraseña" placeholder="Contraseña" minlength="6"
+                    maxlength="50" required>
             </div>
             <div class="mb-3">
-                <input type="text" class="form-control" name="telefono" placeholder="Teléfono">
+                <input type="text" class="form-control" name="telefono" placeholder="Teléfono" maxlength="15"
+                    pattern="[0-9]+" required>
             </div>
             <div class="mb-3">
-                <input type="text" class="form-control" name="residencia" placeholder="Residencia">
+                <input type="text" class="form-control" name="residencia" placeholder="Residencia" maxlength="100"
+                    required>
             </div>
 
             <!-- Mensajes flash -->
