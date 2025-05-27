@@ -1,24 +1,18 @@
-from mysql.connector import Error
-
-import mysql.connector
+import sqlite3
+import os
 
 def create_connection():
     try:
-        connection = mysql.connector.connect(
-            host='localhost',  
-            user='root',  
-            password='',  
-            database='myctgreport'
-        )
-        if connection.is_connected():
-            print("Conexión exitosa a la base de datos")
-            return connection
-    except Error as e:
-        print(f"Error al conectar a la base de datos: {e}")
+        db_path = os.path.join(os.path.dirname(__file__), 'myctgreport.db')
+        connection = sqlite3.connect(db_path)
+        connection.row_factory = sqlite3.Row  # permite acceder a columnas por nombre
+        print("Conexión exitosa a SQLite")
+        return connection
+    except sqlite3.Error as e:
+        print(f"Error al conectar a SQLite: {e}")
         return None
 
 def close_connection(connection):
-    if connection and connection.is_connected():
+    if connection:
         connection.close()
-        print("Conexión cerrada")
-
+        print("Conexión a SQLite cerrada")

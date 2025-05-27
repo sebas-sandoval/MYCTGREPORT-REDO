@@ -1,3 +1,4 @@
+import datetime
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 import os
 from database import create_connection, close_connection
@@ -33,10 +34,10 @@ def login():
         password = request.form["password"]
 
         conn = create_connection()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
 
         # Verifica si el correo y la contraseña coinciden
-        cursor.execute("SELECT * FROM usuarios WHERE correo = %s AND contrasena = %s", (email, password))
+        cursor.execute("SELECT * FROM Usuarios WHERE correo = ? AND contrasena = ?", (email, password))
         user = cursor.fetchone()
 
         if user:
@@ -47,9 +48,10 @@ def login():
             # Registra el inicio de sesión
             ip = request.remote_addr
             cursor.execute("""
-                INSERT INTO RegistroActividad (id_usuario, tipo_evento, ip_dispositivo)
-                VALUES (%s, 'inicio de sesión', %s)
+            INSERT INTO RegistroActividad (id_usuario, tipo_evento, ip_dispositivo)
+            VALUES (?, 'inicio de sesión', ?)
             """, (user["id_usuario"], ip))
+
             conn.commit()
 
             close_connection(conn)
@@ -124,22 +126,23 @@ def registro():
             cursor = conn.cursor()
 
             # Verificar si ya existe el correo
-            cursor.execute("SELECT * FROM Usuarios WHERE correo = %s", (correo,))
+            cursor.execute("SELECT * FROM Usuarios WHERE correo = ?", (correo,))
             if cursor.fetchone():
                 flash("El correo electrónico ya está registrado.")
                 return redirect(url_for("registro"))
 
             # Verificar si ya existe el nickname
-            cursor.execute("SELECT * FROM Usuarios WHERE nickname = %s", (nickname,))
+            cursor.execute("SELECT * FROM Usuarios WHERE nickname = ?", (nickname,))
             if cursor.fetchone():
                 flash("El nickname ya está en uso.")
                 return redirect(url_for("registro"))
 
-            # Insertar nuevo usuario (sin hash)
+            # Insertar nuevo usuario
             cursor.execute("""
-                INSERT INTO Usuarios (nombre, apellido, nickname, correo, contrasena, telefono, residencia)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO Usuarios (nombre, apellido, nickname, correo, contrasena, telefono, residencia)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """, (nombre, apellido, nickname, correo, contraseña, telefono, residencia))
+
             conn.commit()
             conn.close()
 
@@ -160,10 +163,10 @@ def olvido():
         nueva_contra = request.form['nueva_contrasena']
 
         conn = create_connection()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor()
 
         # Validar correo
-        cursor.execute("SELECT id_usuario FROM Usuarios WHERE correo = %s", (correo,))
+        cursor.execute("SELECT id_usuario FROM Usuarios WHERE correo = ?", (correo,))
         usuario = cursor.fetchone()
 
         if usuario:
@@ -171,19 +174,23 @@ def olvido():
 
             # Validar código
             cursor.execute("""
-                SELECT * FROM CodigosSeguridad 
-                WHERE id_usuario = %s AND codigo = %s AND usado = FALSE AND (expiracion IS NULL OR expiracion > NOW())
+            SELECT * FROM CodigosSeguridad 
+            WHERE id_usuario = ? AND codigo = ? AND usado = 0 
+            AND (expiracion IS NULL OR expiracion > DATETIME('now'))
             """, (id_usuario, codigo))
+
             codigo_valido = cursor.fetchone()
 
             if codigo_valido:
                 # Actualizar la contraseña sin hash
                 cursor.execute("""
-                    UPDATE Usuarios SET contrasena = %s WHERE id_usuario = %s
+                UPDATE Usuarios SET contrasena = ? WHERE id_usuario = ?
                 """, (nueva_contra, id_usuario))
 
+
                 # Eliminar el código
-                cursor.execute("DELETE FROM CodigosSeguridad WHERE id_codigo = %s", (codigo_valido['id_codigo'],))
+                cursor.execute("DELETE FROM CodigosSeguridad WHERE id_codigo = ?", (codigo_valido['id_codigo'],))
+
 
                 conn.commit()
                 flash("Contraseña actualizada correctamente. Inicia sesión.", "success")
@@ -206,10 +213,10 @@ def dashboard():
         return redirect(url_for("login"))
 
     conn = create_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor()
 
     # Obtiene los datos del usuario
-    cursor.execute("SELECT * FROM usuarios WHERE id_usuario = %s", (user_id,))
+    cursor.execute("SELECT * FROM usuarios WHERE id_usuario = ?", (user_id,))
     user = cursor.fetchone()
 
     # Filtro para ordenar publicaciones
@@ -222,30 +229,40 @@ def dashboard():
 
     # Obtiene las publicaciones con conteo de likes y comentarios
     query = f"""
-        SELECT p.*, u.nickname, u.foto_perfil,
-            (SELECT COUNT(*) FROM MeGusta WHERE id_publicacion = p.id_publicacion) AS total_likes,
-            (SELECT COUNT(*) FROM Comentarios WHERE id_publicacion = p.id_publicacion) AS total_comentarios,
-            EXISTS(
-                SELECT 1 FROM MeGusta 
-                WHERE id_usuario = %s AND id_publicacion = p.id_publicacion
-            ) AS dio_like
-        FROM Publicaciones p
-        JOIN Usuarios u ON p.id_usuario = u.id_usuario
-        ORDER BY {orden}
-    """
+    SELECT p.*, u.nickname, u.foto_perfil,
+        (SELECT COUNT(*) FROM MeGusta WHERE id_publicacion = p.id_publicacion) AS total_likes,
+        (SELECT COUNT(*) FROM Comentarios WHERE id_publicacion = p.id_publicacion) AS total_comentarios,
+        EXISTS(
+            SELECT 1 FROM MeGusta 
+            WHERE id_usuario = ? AND id_publicacion = p.id_publicacion
+        ) AS dio_like
+    FROM Publicaciones p
+    LEFT JOIN Usuarios u ON p.id_usuario = u.id_usuario
+    ORDER BY {orden}
+"""
+
     cursor.execute(query, (user_id,))
     publicaciones = cursor.fetchall()
-
+    
+    publicaciones = [dict(row) for row in publicaciones]
     # Agrega los comentarios a cada publicación
     for pub in publicaciones:
+        if isinstance(pub["fecha_publicacion"], str):
+            try:
+                pub["fecha_publicacion"] = dt = datetime.datetime.strptime(pub["fecha_publicacion"], "%Y-%m-%d %H:%M:%S")
+                pub["fecha_publicacion"] = dt - datetime.timedelta(hours=5)
+            except ValueError:
+                pub["fecha_publicacion"] = None
+
         cursor.execute("""
-            SELECT c.*, u.nickname 
-            FROM Comentarios c 
-            JOIN Usuarios u ON c.id_usuario = u.id_usuario 
-            WHERE c.id_publicacion = %s 
-            ORDER BY c.fecha_comentario DESC
+        SELECT c.*, u.nickname 
+        FROM Comentarios c 
+        JOIN Usuarios u ON c.id_usuario = u.id_usuario 
+        WHERE c.id_publicacion = ? 
+        ORDER BY c.fecha_comentario DESC
         """, (pub["id_publicacion"],))
         pub["comentarios"] = cursor.fetchall()
+
 
     # Obtiene las 4 publicaciones más likeadas (tendencias)
     cursor.execute("""
@@ -287,11 +304,12 @@ def reportes():
             imagen.save(save_path)
 
             conn = create_connection()
-            cursor = conn.cursor(dictionary=True)
+            cursor = conn.cursor()
             cursor.execute("""
-                INSERT INTO publicaciones (id_usuario, descripcion, imagen, ubicacion)
-                VALUES (%s, %s, %s, %s)
-            """, (id_usuario, texto, unique_filename, ubicacion))
+                    INSERT INTO publicaciones (id_usuario, descripcion, imagen, ubicacion)
+                    VALUES (?, ?, ?, ?)
+                    """, (id_usuario, texto, unique_filename, ubicacion))
+
             conn.commit()
             close_connection(conn)
             flash("Reporte publicado con éxito")
@@ -317,7 +335,7 @@ def editar_publicacion(post_id):
 
     conn = create_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id_usuario FROM Publicaciones WHERE id_publicacion = %s", (post_id,))
+    cursor.execute("SELECT id_usuario FROM Publicaciones WHERE id_publicacion = ?", (post_id,))
     resultado = cursor.fetchone()
 
     if not resultado or resultado[0] != user_id:
@@ -326,15 +344,15 @@ def editar_publicacion(post_id):
 
     cursor.execute("""
         UPDATE Publicaciones 
-        SET descripcion = %s, ubicacion = %s 
-        WHERE id_publicacion = %s
+        SET descripcion = ?, ubicacion = ? 
+        WHERE id_publicacion = ?
     """, (descripcion, ubicacion, post_id))
     conn.commit()
+
     close_connection(conn)
 
     flash("Publicación actualizada correctamente.", "success")
     return redirect(url_for("dashboard", filtro=filtro))
-
 
 # Ruta para eliminar reportes
 @app.route('/eliminar/<int:post_id>', methods=['POST'])
@@ -347,7 +365,7 @@ def eliminar_publicacion(post_id):
 
     conn = create_connection()
     cursor = conn.cursor()
-    cursor.execute("SELECT id_usuario, imagen FROM Publicaciones WHERE id_publicacion = %s", (post_id,))
+    cursor.execute("SELECT id_usuario, imagen FROM Publicaciones WHERE id_publicacion = ?", (post_id,))
     resultado = cursor.fetchone()
 
     if not resultado or resultado[0] != user_id:
@@ -360,7 +378,7 @@ def eliminar_publicacion(post_id):
         os.remove(ruta_imagen)
 
     # Elimina la publicación
-    cursor.execute("DELETE FROM Publicaciones WHERE id_publicacion = %s", (post_id,))
+    cursor.execute("DELETE FROM Publicaciones WHERE id_publicacion = ?", (post_id,))
     conn.commit()
     close_connection(conn)
 
@@ -375,41 +393,44 @@ def like_post(post_id):
         return redirect(url_for("login"))
 
     conn = create_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT * FROM MeGusta WHERE id_usuario = %s AND id_publicacion = %s
-    """, (user_id, post_id))
+       SELECT * FROM MeGusta WHERE id_usuario = ? AND id_publicacion = ?
+        """, (user_id, post_id))
+
     existing_like = cursor.fetchone()
 
     if existing_like:
-        cursor.execute("DELETE FROM MeGusta WHERE id_megusta = %s", (existing_like["id_megusta"],))
+        cursor.execute("DELETE FROM MeGusta WHERE id_megusta = ?", (existing_like["id_megusta"],))
     else:
-        cursor.execute("INSERT INTO MeGusta (id_usuario, id_publicacion) VALUES (%s, %s)", (user_id, post_id))
+        cursor.execute("INSERT INTO MeGusta (id_usuario, id_publicacion) VALUES (?, ?)", (user_id, post_id))
 
         # Obtener autor y nickname
-        cursor.execute("SELECT id_usuario FROM Publicaciones WHERE id_publicacion = %s", (post_id,))
+        cursor.execute("SELECT id_usuario FROM Publicaciones WHERE id_publicacion = ?", (post_id,))
+
         autor = cursor.fetchone()
 
-        cursor.execute("SELECT nickname FROM Usuarios WHERE id_usuario = %s", (user_id,))
+        cursor.execute("SELECT nickname FROM Usuarios WHERE id_usuario = ?", (user_id,))
         nick = cursor.fetchone()
 
         if autor and nick and autor["id_usuario"] != user_id:
             # Verificar preferencias
             cursor.execute("""
-                SELECT not_reacciones FROM PreferenciasNotificaciones WHERE id_usuario = %s
-            """, (autor["id_usuario"],))
+                SELECT not_reacciones FROM PreferenciasNotificaciones WHERE id_usuario = ?
+                """, (autor["id_usuario"],))
             pref = cursor.fetchone()
 
             if pref and pref["not_reacciones"]:
                 cursor.execute("""
-                    INSERT INTO Notificaciones (id_usuario, tipo_evento, id_referencia, mensaje)
-                    VALUES (%s, 'reaccion', %s, %s)
-                """, (
-                    autor["id_usuario"],
-                    post_id,
-                    f"{nick['nickname']} le dio like a tu publicación."
+                INSERT INTO Notificaciones (id_usuario, tipo_evento, id_referencia, mensaje)
+                VALUES (?, 'reaccion', ?, ?)
+            """, (
+                autor["id_usuario"],
+                post_id,
+                f"{nick['nickname']} le dio like a tu publicación."
                 ))
+
 
     conn.commit()
     close_connection(conn)
@@ -428,37 +449,39 @@ def comentarios(post_id):
 
     filtro = request.form.get("filtro", "")
     conn = create_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor()
 
     if request.method == "POST":
         comentario = request.form.get("comentario")
         if comentario:
             cursor.execute("""
                 INSERT INTO Comentarios (id_usuario, id_publicacion, contenido)
-                VALUES (%s, %s, %s)
-            """, (user_id, post_id, comentario))
+                VALUES (?, ?, ?)
+                """, (user_id, post_id, comentario))
 
-            cursor.execute("SELECT id_usuario FROM Publicaciones WHERE id_publicacion = %s", (post_id,))
+
+            cursor.execute("SELECT id_usuario FROM Publicaciones WHERE id_publicacion = ?", (post_id,))
             autor = cursor.fetchone()
 
-            cursor.execute("SELECT nickname FROM Usuarios WHERE id_usuario = %s", (user_id,))
+            cursor.execute("SELECT nickname FROM Usuarios WHERE id_usuario = ?", (user_id,))
             nick = cursor.fetchone()
 
             if autor and nick and autor["id_usuario"] != user_id:
                 cursor.execute("""
-                    SELECT not_reacciones FROM PreferenciasNotificaciones WHERE id_usuario = %s
+                    SELECT not_reacciones FROM PreferenciasNotificaciones WHERE id_usuario = ?
                 """, (autor["id_usuario"],))
+
                 pref = cursor.fetchone()
 
                 if pref and pref["not_reacciones"]:
                     cursor.execute("""
-                        INSERT INTO Notificaciones (id_usuario, tipo_evento, id_referencia, mensaje)
-                        VALUES (%s, 'comentario', %s, %s)
-                    """, (
-                        autor["id_usuario"],
-                        post_id,
-                        f"{nick['nickname']} comentó en tu publicación."
-                    ))
+                INSERT INTO Notificaciones (id_usuario, tipo_evento, id_referencia, mensaje)
+                VALUES (?, 'comentario', ?, ?)
+                """, (
+                autor["id_usuario"],
+                post_id,
+                f"{nick['nickname']} comentó en tu publicación."
+                ))
 
     conn.commit()
     close_connection(conn)
@@ -482,9 +505,10 @@ def editar_comentario(comentario_id):
     # Solo permite editar si el comentario es del usuario
     cursor.execute("""
         UPDATE Comentarios 
-        SET contenido = %s 
-        WHERE id_comentario = %s AND id_usuario = %s
-    """, (nuevo_texto, comentario_id, user_id))
+        SET contenido = ? 
+        WHERE id_comentario = ? AND id_usuario = ?
+        """, (nuevo_texto, comentario_id, user_id))
+
     conn.commit()
 
     close_connection(conn)
@@ -503,8 +527,9 @@ def eliminar_comentario(comentario_id):
     cursor = conn.cursor()
     cursor.execute("""
         DELETE FROM Comentarios 
-        WHERE id_comentario = %s AND id_usuario = %s
-    """, (comentario_id, user_id))
+        WHERE id_comentario = ? AND id_usuario = ?
+        """, (comentario_id, user_id))
+
     conn.commit()
 
     close_connection(conn)
@@ -525,51 +550,52 @@ def toggle_seguir(id_seguido):
         return redirect(url_for('perfil_usuario', id_usuario=id_seguido))
 
     conn = create_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT 1 FROM Seguidores 
-        WHERE id_seguidor = %s AND id_seguido = %s
+    SELECT 1 FROM Seguidores 
+    WHERE id_seguidor = ? AND id_seguido = ?
     """, (id_seguidor, id_seguido))
+
     ya_sigue = cursor.fetchone()
 
     if ya_sigue:
         cursor.execute("""
-            DELETE FROM Seguidores 
-            WHERE id_seguidor = %s AND id_seguido = %s
-        """, (id_seguidor, id_seguido))
+    DELETE FROM Seguidores 
+    WHERE id_seguidor = ? AND id_seguido = ?
+    """, (id_seguidor, id_seguido))
         flash("Has dejado de seguir al usuario.", "info")
     else:
         cursor.execute("""
-            INSERT IGNORE INTO Seguidores (id_seguidor, id_seguido)
-            VALUES (%s, %s)
-        """, (id_seguidor, id_seguido))
+    INSERT OR IGNORE INTO Seguidores (id_seguidor, id_seguido)
+    VALUES (?, ?)
+    """, (id_seguidor, id_seguido))
+
         flash("Ahora sigues a este usuario.", "success")
 
-        cursor.execute("SELECT nickname FROM Usuarios WHERE id_usuario = %s", (id_seguidor,))
+        cursor.execute("SELECT nickname FROM Usuarios WHERE id_usuario = ?", (id_seguidor,))
         nick = cursor.fetchone()
 
         if nick:
             cursor.execute("""
-                SELECT not_seguidos FROM PreferenciasNotificaciones WHERE id_usuario = %s
+            SELECT not_seguidos FROM PreferenciasNotificaciones WHERE id_usuario = ?
             """, (id_seguido,))
             pref = cursor.fetchone()
 
             if pref and pref["not_seguidos"]:
                 cursor.execute("""
-                    INSERT INTO Notificaciones (id_usuario, tipo_evento, id_referencia, mensaje)
-                    VALUES (%s, 'seguido', %s, %s)
-                """, (
-                    id_seguido,
-                    id_seguidor,
-                    f"{nick['nickname']} comenzó a seguirte."
-                ))
+            INSERT INTO Notificaciones (id_usuario, tipo_evento, id_referencia, mensaje)
+            VALUES (?, 'seguido', ?, ?)
+            """, (
+            id_seguido,
+            id_seguidor,
+            f"{nick['nickname']} comenzó a seguirte."
+            ))
 
     conn.commit()
     close_connection(conn)
 
     return redirect(url_for('perfil_usuario', id_usuario=id_seguido, filtro=filtro))
-
 
 #Ruta para ver el perfil del usuario
 @app.route('/perfil/<int:id_usuario>')
@@ -582,10 +608,10 @@ def perfil_usuario(id_usuario):
         flash("Error al conectar con la base de datos", "danger")
         return redirect(url_for("dashboard"))
 
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor()
 
     # Obteniene datos del usuario
-    cursor.execute("SELECT * FROM Usuarios WHERE id_usuario = %s", (id_usuario,))
+    cursor.execute("SELECT * FROM Usuarios WHERE id_usuario = ?", (id_usuario,))
     usuario = cursor.fetchone()
     if not usuario:
         flash("El usuario no fue encontrado", "warning")
@@ -594,40 +620,42 @@ def perfil_usuario(id_usuario):
         return redirect(url_for("dashboard"))
 
     # Contador de las publicaciones
-    cursor.execute("SELECT COUNT(*) AS total FROM Publicaciones WHERE id_usuario = %s", (id_usuario,))
+    cursor.execute("SELECT COUNT(*) AS total FROM Publicaciones WHERE id_usuario = ?", (id_usuario,))
     publicaciones_count = cursor.fetchone()['total']
 
     # Contador de los seguidores
-    cursor.execute("SELECT COUNT(*) AS total FROM Seguidores WHERE id_seguido = %s", (id_usuario,))
+    cursor.execute("SELECT COUNT(*) AS total FROM Seguidores WHERE id_seguido = ?", (id_usuario,))
     seguidores_count = cursor.fetchone()['total']
 
     # Contar de los seguidos
-    cursor.execute("SELECT COUNT(*) AS total FROM Seguidores WHERE id_seguidor = %s", (id_usuario,))
+    cursor.execute("SELECT COUNT(*) AS total FROM Seguidores WHERE id_seguidor = ?", (id_usuario,))
     seguidos_count = cursor.fetchone()['total']
 
     # Obtiene lista de seguidores 
     cursor.execute("""
-        SELECT u.* FROM Seguidores s
-        JOIN Usuarios u ON s.id_seguidor = u.id_usuario
-        WHERE s.id_seguido = %s
+    SELECT u.* FROM Seguidores s
+    JOIN Usuarios u ON s.id_seguidor = u.id_usuario
+    WHERE s.id_seguido = ?
     """, (id_usuario,))
+
     seguidores = cursor.fetchall()
 
     # Obtiene lista de seguidos
     cursor.execute("""
-        SELECT u.* FROM Seguidores s
-        JOIN Usuarios u ON s.id_seguido = u.id_usuario
-        WHERE s.id_seguidor = %s
+    SELECT u.* FROM Seguidores s
+    JOIN Usuarios u ON s.id_seguido = u.id_usuario
+    WHERE s.id_seguidor = ?
     """, (id_usuario,))
+
     seguidos = cursor.fetchall()
 
     # Verifica si el usuario actual ya sigue al usuario del perfil
     ya_sigue = False
     if id_actual and id_actual != id_usuario:
         cursor.execute("""
-            SELECT 1 FROM Seguidores
-            WHERE id_seguidor = %s AND id_seguido = %s
-        """, (id_actual, id_usuario))
+    SELECT 1 FROM Seguidores
+    WHERE id_seguidor = ? AND id_seguido = ?
+    """, (id_actual, id_usuario))
         ya_sigue = cursor.fetchone() is not None
 
     cursor.close()
@@ -650,10 +678,10 @@ def ajustes(seccion):
     
     filtro = request.args.get("filtro")
     conn = create_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor()
 
     # Obtiene datos del usuario
-    cursor.execute("SELECT * FROM Usuarios WHERE id_usuario = %s", (session['user'],))
+    cursor.execute("SELECT * FROM Usuarios WHERE id_usuario = ?", (session['user'],))
     usuario = cursor.fetchone()
 
     # Variables comunes
@@ -684,13 +712,21 @@ def ajustes(seccion):
             close_connection(conn)
             return redirect(url_for('ajustes', seccion='informacion'))
 
-        cursor.execute("SELECT id_usuario FROM Usuarios WHERE correo = %s AND id_usuario != %s", (correo, session['user']))
+        cursor.execute("""
+        SELECT id_usuario FROM Usuarios 
+        WHERE correo = ? AND id_usuario != ?
+        """, (correo, session['user']))
+
         if cursor.fetchone():
             flash('El correo ya está en uso por otro usuario.', 'danger')
             close_connection(conn)
             return redirect(url_for('ajustes', seccion='informacion'))
 
-        cursor.execute("SELECT id_usuario FROM Usuarios WHERE nickname = %s AND id_usuario != %s", (nickname, session['user']))
+        cursor.execute("""
+        SELECT id_usuario FROM Usuarios 
+        WHERE nickname = ? AND id_usuario != ?
+        """, (nickname, session['user']))
+
         if cursor.fetchone():
             flash('El nickname ya está en uso por otro usuario.', 'danger')
             close_connection(conn)
@@ -712,27 +748,32 @@ def ajustes(seccion):
             foto_final = usuario['foto_perfil']
 
         cursor.execute("""
-            UPDATE Usuarios
-            SET nombre = %s, apellido = %s, nickname = %s, correo = %s, telefono = %s,
-                residencia = %s, foto_perfil = %s
-            WHERE id_usuario = %s
-        """, (nombres, apellidos, nickname, correo, telefono, residencia, foto_final, session['user']))
+        UPDATE Usuarios
+        SET nombre = ?, apellido = ?, nickname = ?, correo = ?, telefono = ?,
+        residencia = ?, foto_perfil = ?
+        WHERE id_usuario = ?
+        """, (
+            nombres, apellidos, nickname, correo, telefono,
+            residencia, foto_final, session['user']
+            ))
+        
         conn.commit()
         flash('Información actualizada correctamente.', 'success')
 
         # Recarga los datos actualizados
-        cursor.execute("SELECT * FROM Usuarios WHERE id_usuario = %s", (session['user'],))
+        cursor.execute("SELECT * FROM Usuarios WHERE id_usuario = ?", (session['user'],))
         usuario = cursor.fetchone()
 
     # --- SEGURIDAD ---
     elif seccion == 'seguridad':
         cursor.execute("""
-            SELECT tipo_evento, fecha_evento, ip_dispositivo
-            FROM RegistroActividad
-            WHERE id_usuario = %s
-            AND tipo_evento IN ('inicio de sesión', 'cambio de contraseña')
-            ORDER BY fecha_evento DESC
-        """, (session['user'],))
+    SELECT tipo_evento, fecha_evento, ip_dispositivo
+    FROM RegistroActividad
+    WHERE id_usuario = ?
+    AND tipo_evento IN ('inicio de sesión', 'cambio de contraseña')
+    ORDER BY fecha_evento DESC
+    """, (session['user'],))
+
         eventos = cursor.fetchall()
 
         for evento in eventos:
@@ -742,25 +783,31 @@ def ajustes(seccion):
             elif evento['tipo_evento'] == 'cambio de contraseña' and not ultimo_cambio_contrasena:
                 ultimo_cambio_contrasena = evento['fecha_evento']
                 ip_cambio_contrasena = evento['ip_dispositivo']
-            if ultimo_inicio_sesion and ultimo_cambio_contrasena:
-                break
-
+            if ultimo_inicio_sesion and isinstance(ultimo_inicio_sesion, str):
+                ultimo_inicio_sesion = datetime.datetime.strptime(ultimo_inicio_sesion, '%Y-%m-%d %H:%M:%S')
+                ultimo_inicio_sesion -= datetime.timedelta(hours=5)
+            if ultimo_cambio_contrasena and isinstance(ultimo_cambio_contrasena, str):
+                ultimo_cambio_contrasena = datetime.datetime.strptime(ultimo_cambio_contrasena, '%Y-%m-%d %H:%M:%S')
+                ultimo_cambio_contrasena -= datetime.timedelta(hours=5)
+            
         if request.method == 'POST':
             accion = request.form.get('accion')
 
             if accion == 'generar':
-                cursor.execute("DELETE FROM CodigosSeguridad WHERE id_usuario = %s", (session['user'],))
+                cursor.execute("DELETE FROM CodigosSeguridad WHERE id_usuario = ?", (session['user'],))
                 for _ in range(4):
                     codigo = uuid.uuid4().hex[:10]
+                    now_dt = datetime.datetime.now()
+                    expiracion = (now_dt + datetime.timedelta(days=365)).strftime("%Y-%m-%d %H:%M:%S")
                     cursor.execute("""
-                        INSERT INTO CodigosSeguridad (id_usuario, codigo, expiracion)
-                        VALUES (%s, %s, NOW() + INTERVAL 1 YEAR)
-                    """, (session['user'], codigo))
+                    INSERT INTO CodigosSeguridad (id_usuario, codigo, expiracion)
+                    VALUES (?, ?, ?)
+                    """, (session['user'], codigo, expiracion))
                 conn.commit()
                 flash('Se generaron nuevos códigos de seguridad.', 'success')
 
             elif accion == 'eliminar':
-                cursor.execute("DELETE FROM CodigosSeguridad WHERE id_usuario = %s", (session['user'],))
+                cursor.execute("DELETE FROM CodigosSeguridad WHERE id_usuario = ?", (session['user'],))
                 conn.commit()
                 flash('Códigos de seguridad eliminados.', 'warning')
 
@@ -772,16 +819,16 @@ def ajustes(seccion):
                 if nueva_contrasena != confirmar_contrasena:
                     flash('Las nuevas contraseñas no coinciden.', 'warning')
                 else:
-                    cursor.execute("SELECT contrasena FROM Usuarios WHERE id_usuario = %s", (session['user'],))
+                    cursor.execute("SELECT contrasena FROM Usuarios WHERE id_usuario = ?", (session['user'],))
                     resultado = cursor.fetchone()
 
                     if not resultado or resultado['contrasena'] != contrasena_actual:
                         flash('La contraseña actual no es correcta.', 'danger')
                     else:
-                        cursor.execute("UPDATE Usuarios SET contrasena = %s WHERE id_usuario = %s", (nueva_contrasena, session['user']))
+                        cursor.execute("UPDATE Usuarios SET contrasena = ? WHERE id_usuario = ?", (nueva_contrasena, session['user']))
                         cursor.execute("""
-                            INSERT INTO RegistroActividad (id_usuario, tipo_evento, ip_dispositivo)
-                            VALUES (%s, 'cambio de contraseña', %s)
+                        INSERT INTO RegistroActividad (id_usuario, tipo_evento, ip_dispositivo)
+                        VALUES (?, 'cambio de contraseña', ?)
                         """, (session['user'], request.remote_addr))
                         conn.commit()
                         flash('Contraseña actualizada correctamente.', 'success')
@@ -789,7 +836,7 @@ def ajustes(seccion):
             elif accion == 'eliminar_cuenta':
                 contrasena_confirmacion = request.form['contrasena_confirmacion']
 
-                cursor.execute("SELECT contrasena FROM Usuarios WHERE id_usuario = %s", (session['user'],))
+                cursor.execute("SELECT contrasena FROM Usuarios WHERE id_usuario = ?", (session['user'],))
                 resultado = cursor.fetchone()
 
                 if not resultado or resultado['contrasena'] != contrasena_confirmacion:
@@ -802,7 +849,7 @@ def ajustes(seccion):
                             os.remove(ruta_foto)
 
                     # Elimina fotos de publicaciones
-                    cursor.execute("SELECT imagen FROM Publicaciones WHERE id_usuario = %s", (session['user'],))
+                    cursor.execute("SELECT imagen FROM Publicaciones WHERE id_usuario = ?", (session['user'],))
                     for pub in cursor.fetchall():
                         if pub['imagen']:
                             ruta = os.path.join(app.config['UPLOAD_FOLDER'], pub['imagen'])
@@ -810,11 +857,11 @@ def ajustes(seccion):
                                 os.remove(ruta)
 
                     # Elimina registros relacionados
-                    cursor.execute("DELETE FROM CodigosSeguridad WHERE id_usuario = %s", (session['user'],))
-                    cursor.execute("DELETE FROM RegistroActividad WHERE id_usuario = %s", (session['user'],))
-                    cursor.execute("DELETE FROM Comentarios WHERE id_usuario = %s", (session['user'],))
-                    cursor.execute("DELETE FROM Publicaciones WHERE id_usuario = %s", (session['user'],))
-                    cursor.execute("DELETE FROM Usuarios WHERE id_usuario = %s", (session['user'],))
+                    cursor.execute("DELETE FROM CodigosSeguridad WHERE id_usuario = ?", (session['user'],))
+                    cursor.execute("DELETE FROM RegistroActividad WHERE id_usuario = ?", (session['user'],))
+                    cursor.execute("DELETE FROM Comentarios WHERE id_usuario = ?", (session['user'],))
+                    cursor.execute("DELETE FROM Publicaciones WHERE id_usuario = ?", (session['user'],))
+                    cursor.execute("DELETE FROM Usuarios WHERE id_usuario = ?", (session['user'],))
                     conn.commit()
 
                     session.clear()
@@ -822,7 +869,7 @@ def ajustes(seccion):
                     return redirect(url_for('login'))
 
         # Obteniene los códigos actuales
-        cursor.execute("SELECT codigo FROM CodigosSeguridad WHERE id_usuario = %s", (session['user'],))
+        cursor.execute("SELECT codigo FROM CodigosSeguridad WHERE id_usuario = ?", (session['user'],))
         codigos = [row['codigo'] for row in cursor.fetchall()]
 
     # --- NOTIFICACIONES ---
@@ -834,22 +881,23 @@ def ajustes(seccion):
             not_personalizadas = 'personalizada' in request.form
 
             cursor.execute("""
-                INSERT INTO PreferenciasNotificaciones (id_usuario, not_seguidos, not_reportes, not_reacciones, not_personalizadas)
-                VALUES (%s, %s, %s, %s, %s)
-                ON DUPLICATE KEY UPDATE
-                    not_seguidos = VALUES(not_seguidos),
-                    not_reportes = VALUES(not_reportes),
-                    not_reacciones = VALUES(not_reacciones),
-                    not_personalizadas = VALUES(not_personalizadas)
+            INSERT INTO PreferenciasNotificaciones (id_usuario, not_seguidos, not_reportes, not_reacciones, not_personalizadas)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(id_usuario) DO UPDATE SET
+            not_seguidos = excluded.not_seguidos,
+            not_reportes = excluded.not_reportes,
+            not_reacciones = excluded.not_reacciones,
+            not_personalizadas = excluded.not_personalizadas
             """, (session['user'], not_seguidos, not_reportes, not_reacciones, not_personalizadas))
             conn.commit()
             flash('Preferencias actualizadas correctamente.', 'success')
 
         cursor.execute("""
-            SELECT not_seguidos, not_reportes, not_reacciones, not_personalizadas
-            FROM PreferenciasNotificaciones
-            WHERE id_usuario = %s
+        SELECT not_seguidos, not_reportes, not_reacciones, not_personalizadas
+        FROM PreferenciasNotificaciones
+        WHERE id_usuario = ?
         """, (session['user'],))
+
         resultado = cursor.fetchone()
         if resultado:
             preferencias = resultado
@@ -877,16 +925,28 @@ def mis_reportes():
     
     filtro = request.args.get("filtro")
     conn = create_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor()
 
     cursor.execute("""
-        SELECT descripcion, fecha_publicacion, estado 
-        FROM Publicaciones 
-        WHERE id_usuario = %s 
-        ORDER BY fecha_publicacion DESC
+    SELECT descripcion, fecha_publicacion, estado 
+    FROM Publicaciones 
+    WHERE id_usuario = ? 
+    ORDER BY fecha_publicacion DESC
     """, (session['user'],))
 
-    reportes = cursor.fetchall()
+    
+
+    filas = cursor.fetchall()
+    reportes = []
+
+    for fila in filas:
+        reporte = dict(fila)
+
+        reporte['fecha_publicacion'] = datetime.datetime.strptime(reporte['fecha_publicacion'], '%Y-%m-%d %H:%M:%S')
+        reporte['fecha_publicacion'] -= datetime.timedelta(hours=5)
+
+        reportes.append(reporte)
+    
     close_connection(conn)
 
     return render_template('reports.html', reportes=reportes, filtro=filtro)
@@ -901,19 +961,25 @@ def mis_notificaciones():
 
     filtro = request.args.get("filtro")
     conn = create_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor()
 
     cursor.execute("""
         SELECT id_notificacion, tipo_evento, mensaje, id_referencia, fecha_notificacion
         FROM Notificaciones
-        WHERE id_usuario = %s
+        WHERE id_usuario = ?
         ORDER BY fecha_notificacion DESC
-    """, (user_id,))
-    
+        """, (user_id,))
+
     notificaciones = cursor.fetchall()
 
-    # Formatear fecha para evitar errores en Jinja
     for notif in notificaciones:
+    
+        notif = dict(notif)
+
+        notif["fecha_notificacion"] = datetime.datetime.strptime(notif["fecha_notificacion"], "%Y-%m-%d %H:%M:%S")
+
+        notif["fecha_notificacion"] -= datetime.timedelta(hours=5)
+
         notif["fecha_formateada"] = notif["fecha_notificacion"].strftime("%d/%m/%Y %H:%M")
 
     close_connection(conn)
@@ -933,8 +999,8 @@ def eliminar_notificacion(id_notificacion):
     
     # Elimina la notificación solo si pertenece al usuario
     cursor.execute("""
-        DELETE FROM Notificaciones
-        WHERE id_notificacion = %s AND id_usuario = %s
+    DELETE FROM Notificaciones
+    WHERE id_notificacion = ? AND id_usuario = ?
     """, (id_notificacion, user_id))
     conn.commit()
     close_connection(conn)
@@ -949,7 +1015,7 @@ def admin():
         return redirect(url_for('login'))
 
     conn = create_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor()
 
     # Trae las publicaciones, los comentarios y los likes
     cursor.execute("""
@@ -963,21 +1029,26 @@ def admin():
     for publicacion in publicaciones:
         # Trae los likes para la publicación
         cursor.execute("""
-            SELECT COUNT(*) AS likes_count
-            FROM MeGusta
-            WHERE id_publicacion = %s
+        SELECT COUNT(*) AS likes_count
+        FROM MeGusta
+        WHERE id_publicacion = ?
         """, (publicacion["id_publicacion"],))
+        
+        publicacion = dict(publicacion)
         publicacion["likes_count"] = cursor.fetchone()["likes_count"]
 
         # Trae los comentarios para la publicación
         cursor.execute("""
-            SELECT c.*, u.nickname
-            FROM Comentarios c
-            JOIN Usuarios u ON c.id_usuario = u.id_usuario
-            WHERE c.id_publicacion = %s
-            ORDER BY c.fecha_comentario DESC
+        SELECT c.*, u.nickname
+        FROM Comentarios c
+        JOIN Usuarios u ON c.id_usuario = u.id_usuario
+        WHERE c.id_publicacion = ?
+        ORDER BY c.fecha_comentario DESC
         """, (publicacion["id_publicacion"],))
+
+        publicacion = dict(publicacion)
         publicacion["comentarios"] = cursor.fetchall()
+
 
     close_connection(conn)
     return render_template('admin.html', publicaciones=publicaciones)
@@ -991,24 +1062,36 @@ def cambiar_estado(id_publicacion):
     nuevo_estado = request.form.get('estado')
 
     conn = create_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor()
 
-    cursor.execute("UPDATE Publicaciones SET estado = %s WHERE id_publicacion = %s", (nuevo_estado, id_publicacion))
+    cursor.execute(
+    "UPDATE Publicaciones SET estado = ? WHERE id_publicacion = ?",
+    (nuevo_estado, id_publicacion)
+    ) 
 
-    cursor.execute("SELECT id_usuario FROM Publicaciones WHERE id_publicacion = %s", (id_publicacion,))
+    cursor.execute(
+    "SELECT id_usuario FROM Publicaciones WHERE id_publicacion = ?",
+    (id_publicacion,)
+    )
+    
     publicacion = cursor.fetchone()
 
     if publicacion:
         id_autor = publicacion['id_usuario']
-        cursor.execute("SELECT not_reportes FROM PreferenciasNotificaciones WHERE id_usuario = %s", (id_autor,))
+        cursor.execute(
+        "SELECT not_reportes FROM PreferenciasNotificaciones WHERE id_usuario = ?",
+        (id_autor,)
+        )
+
         preferencias = cursor.fetchone()
 
         if preferencias and preferencias['not_reportes']:
             mensaje = f"El estado de tu reporte fue actualizado a '{nuevo_estado}'."
             cursor.execute("""
-                INSERT INTO Notificaciones (id_usuario, tipo_evento, id_referencia, mensaje)
-                VALUES (%s, 'reporte', %s, %s)
+            INSERT INTO Notificaciones (id_usuario, tipo_evento, id_referencia, mensaje)
+            VALUES (?, 'reporte', ?, ?)
             """, (id_autor, id_publicacion, mensaje))
+
 
     conn.commit()
     close_connection(conn)
@@ -1021,10 +1104,14 @@ def eliminar(id_publicacion):
         return redirect(url_for('login'))
 
     conn = create_connection()
-    cursor = conn.cursor(dictionary=True)
+    cursor = conn.cursor()
 
     # Obteniene el nombre del archivo de imagen asociado a la publicación
-    cursor.execute("SELECT imagen FROM Publicaciones WHERE id_publicacion = %s", (id_publicacion,))
+    cursor.execute(
+    "SELECT imagen FROM Publicaciones WHERE id_publicacion = ?",
+    (id_publicacion,)
+    )
+
     publicacion = cursor.fetchone()
 
     # Si existe una imagen, la eliminala del servidor
@@ -1035,7 +1122,7 @@ def eliminar(id_publicacion):
 
     # Elimina la publicación
     cursor = conn.cursor()
-    cursor.execute("DELETE FROM Publicaciones WHERE id_publicacion = %s", (id_publicacion,))
+    cursor.execute("DELETE FROM Publicaciones WHERE id_publicacion = ?", (id_publicacion,))
     conn.commit()
 
     close_connection(conn)
