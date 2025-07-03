@@ -1,24 +1,27 @@
-import datetime
+from typing import Set
 from flask import Flask, render_template, request, redirect, url_for, session, flash
-import os
 from database import create_connection, close_connection
-import re
 from werkzeug.utils import secure_filename
+import datetime
 import uuid
+import os
+import re
 
 # Ruta base del proyecto
-base_dir = os.path.dirname(os.path.abspath(__file__))
+base_dir: str = os.path.dirname(os.path.abspath(__file__))
 
 # Configuración de Flask y rutas de plantillas
-template_dir = os.path.join(base_dir, 'templates')
-app = Flask(__name__, template_folder=template_dir)
+template_dir: str = os.path.join(base_dir, 'templates')
+app: Flask = Flask(__name__, template_folder=template_dir)
 
 # Configuración de la carpeta de subida de imágenes
-UPLOAD_FOLDER = os.path.join(base_dir, 'static', 'imgs')
+UPLOAD_FOLDER: str = os.path.join(base_dir, 'static', 'imgs')
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)  # Crea la carpeta si no existe
+
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024  # 16 MB
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+
+ALLOWED_EXTENSIONS: Set[str] = {'png', 'jpg', 'jpeg', 'gif'}
 
 def allowed_file(filename):
     return '.' in filename and \

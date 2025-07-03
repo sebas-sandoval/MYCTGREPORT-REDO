@@ -1,38 +1,50 @@
+from typing import List
 import random
 import string
 
-def generar_contrasena(longitud=12, usar_mayusculas=True, usar_numeros=True, usar_simbolos=True):
-    caracteres = list(string.ascii_lowercase)
 
-    if usar_mayusculas:
-        caracteres.extend(string.ascii_uppercase)
-    if usar_numeros:
-        caracteres.extend(string.digits)
-    if usar_simbolos:
-        caracteres.extend("!@#$%^&*()-_=+[]{}|;:,.<>?/")
+def generate_password(
+    length: int = 12,
+    use_uppercases: bool = True,
+    use_numbers: bool = True,
+    use_symbols: bool = True,
+) -> str:
+    characters: List[str] = list(string.ascii_lowercase)
 
-    if not caracteres:
+    if use_uppercases:
+        characters.extend(string.ascii_uppercase)
+
+    if use_numbers:
+        characters.extend(string.digits)
+
+    if use_symbols:
+        characters.extend("!@#$%^&*()-_=+[]{}|;:,.<>?/")
+
+    if not characters:
         raise ValueError("Debes incluir al menos un tipo de carácter")
 
-    contrasena = ''.join(random.choice(caracteres) for _ in range(longitud))
-    return contrasena
+    password: str = "".join(random.choice(characters) for _ in range(length))
+
+    return password
 
 
 if __name__ == "__main__":
     print("Generador de Contraseñas Seguras")
-    
+
     try:
-        longitud = int(input("Longitud de la contraseña (mínimo 8): "))
+        length: int = int(input("Longitud de la contraseña (mínimo 8): "))
     except ValueError:
         print("Debes ingresar un número válido.")
         exit()
 
-    usar_mayusculas = input("¿Incluir mayúsculas? (s/n): ").strip().lower() == 's'
-    usar_numeros = input("¿Incluir números? (s/n): ").strip().lower() == 's'
-    usar_simbolos = input("¿Incluir símbolos? (s/n): ").strip().lower() == 's'
+    use_uppercases: bool = input("¿Incluir mayúsculas? (s/n): ").strip().lower() == "s"
+    use_numbers: bool = input("¿Incluir números? (s/n): ").strip().lower() == "s"
+    use_symbols: bool = input("¿Incluir símbolos? (s/n): ").strip().lower() == "s"
 
-    if longitud < 8:
+    if length < 8:
         print("La longitud mínima recomendada es 8 caracteres.")
     else:
-        contrasena = generar_contrasena(longitud, usar_mayusculas, usar_numeros, usar_simbolos)
-        print("Contraseña generada:", contrasena)
+        password: str = generate_password(
+            length, use_uppercases, use_numbers, use_symbols
+        )
+        print("Contraseña generada:", password)
